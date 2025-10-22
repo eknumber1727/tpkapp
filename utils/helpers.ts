@@ -2,18 +2,11 @@ import { AspectRatio } from '../types';
 
 // Helper to rewrite Firebase Storage URLs to use the Netlify proxy
 const rewriteFirebaseUrl = (url: string): string => {
-    if (url.startsWith('https://firebasestorage.googleapis.com/')) {
+    const firebaseBaseUrl = 'https://firebasestorage.googleapis.com';
+    if (url.startsWith(firebaseBaseUrl)) {
         // Example: https://firebasestorage.googleapis.com/v0/b/....
         // Becomes: /api/images/v0/b/....
-        try {
-            const urlObject = new URL(url);
-            // The full path including the '/v0/b/...' part
-            return `/api/images${urlObject.pathname}${urlObject.search}`;
-        } catch (e) {
-            // Fallback for invalid URLs, though unlikely
-            console.error("Could not parse Firebase URL:", url);
-            return url;
-        }
+        return `/api/images${url.substring(firebaseBaseUrl.length)}`;
     }
     // Don't rewrite local blob URLs (from user uploads) or data URLs
     return url;
@@ -30,8 +23,8 @@ const drawTransformedImage = (ctx: CanvasRenderingContext2D, image: HTMLImageEle
 };
 
 const loadImage = (src: string): Promise<HTMLImageElement> => {
-    // No proxy for local blob URLs
-    const finalSrc = src.startsWith('blob:') ? src : rewriteFirebaseUrl(src);
+    // No proxy for local blob URLs or data URLs
+    const finalSrc = src.startsWith('blob:') || src.startsWith('data:') ? src : rewriteFirebaseUrl(src);
     return new Promise((resolve, reject) => {
         const img = new Image();
         // Required for fetching from Firebase Storage URL even with proxy
