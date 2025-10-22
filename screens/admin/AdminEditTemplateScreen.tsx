@@ -5,8 +5,6 @@ import { ASPECT_RATIOS, LANGUAGES } from '../../constants';
 import { CategoryName, AspectRatio, Template } from '../../types';
 import { ChevronLeftIcon } from '../../components/shared/Icons';
 
-const MAX_FILE_SIZE = 300 * 1024; // 300 KB
-
 const AdminEditTemplateScreen: React.FC = () => {
     const { templateId } = useParams<{ templateId: string }>();
     const navigate = useNavigate();
@@ -49,10 +47,6 @@ const AdminEditTemplateScreen: React.FC = () => {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, setFile: React.Dispatch<React.SetStateAction<File | null>>, setPreview: React.Dispatch<React.SetStateAction<string|null>>) => {
         const file = e.target.files?.[0];
         if (file) {
-            if (file.size > MAX_FILE_SIZE) {
-                setError(`File size cannot exceed ${MAX_FILE_SIZE / 1024} KB.`);
-                return;
-            }
             setError('');
             setFile(file);
             setPreview(URL.createObjectURL(file));

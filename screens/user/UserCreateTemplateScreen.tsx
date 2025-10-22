@@ -4,8 +4,6 @@ import { useData } from '../../context/DataContext';
 import { ASPECT_RATIOS, LANGUAGES } from '../../constants';
 import { CategoryName, AspectRatio, Role } from '../../types';
 
-const MAX_FILE_SIZE = 300 * 1024; // 300 KB
-
 const UserCreateTemplateScreen: React.FC = () => {
     const navigate = useNavigate();
     const { currentUser, submitTemplate, adminSubmitTemplate, categories } = useData();
@@ -25,8 +23,9 @@ const UserCreateTemplateScreen: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
     useEffect(() => {
+        // Pre-select first category if available and none is selected
         if (categories.length > 0 && !category) {
-            setCategory(categories[0].name);
+            // setCategory(categories[0].name); // This causes issues, let user select explicitly
         }
     }, [categories, category]);
 
@@ -62,10 +61,6 @@ const UserCreateTemplateScreen: React.FC = () => {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, setFile: React.Dispatch<React.SetStateAction<File | null>>, setPreview: React.Dispatch<React.SetStateAction<string|null>>) => {
         const file = e.target.files?.[0];
         if (file) {
-            if (file.size > MAX_FILE_SIZE) {
-                setError(`File size cannot exceed ${MAX_FILE_SIZE / 1024} KB.`);
-                return;
-            }
             setError('');
             setFile(file);
             setPreview(URL.createObjectURL(file));
@@ -146,7 +141,8 @@ const UserCreateTemplateScreen: React.FC = () => {
                      <div>
                         <label className="font-semibold text-[#2C3E50]">Category</label>
                         {categories.length > 0 ? (
-                            <select value={category} onChange={e => setCategory(e.target.value as CategoryName)} className="w-full mt-1 p-2 border rounded-lg bg-white">
+                            <select value={category} onChange={e => setCategory(e.target.value as CategoryName)} required className="w-full mt-1 p-2 border rounded-lg bg-white">
+                                <option value="" disabled>Select a category</option>
                                 {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
                             </select>
                         ) : (
