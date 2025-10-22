@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { ChevronLeftIcon, DownloadIcon, ResetIcon, CheckCircleIcon } from '../../components/shared/Icons';
+import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon } from '../../components/shared/Icons';
 import { exportMedia } from '../../utils/helpers';
 import { AspectRatio, SavedDesignLayer } from '../../types';
 import { ASPECT_RATIOS } from '../../constants';
@@ -10,8 +10,8 @@ const DownloadCompleteModal: React.FC<{ onHome: () => void; onContinue: () => vo
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
         <div className="bg-white p-8 rounded-[30px] shadow-lg text-center max-w-sm mx-4">
             <CheckCircleIcon className="w-16 h-16 text-green-500 mx-auto" />
-            <h2 className="text-2xl font-bold text-[#2C3E50] mt-4">Download Started!</h2>
-            <p className="text-[#7F8C8D] mt-2 mb-6">Your creation is being saved to your device.</p>
+            <h2 className="text-2xl font-bold text-[#2C3E50] mt-4">Success!</h2>
+            <p className="text-[#7F8C8D] mt-2 mb-6">Your creation is ready. Use the share menu to save or send it.</p>
             <div className="flex flex-col gap-3">
                 <button
                     onClick={onHome}
@@ -43,11 +43,19 @@ const EditorScreen: React.FC = () => {
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [activeRatio, setActiveRatio] = useState<AspectRatio>(template?.ratio_default || '4:5');
   const [isDownloadComplete, setIsDownloadComplete] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const mediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    // A simple check for mobile based on Web Share API support
+    setIsMobile(!!(navigator.share && navigator.canShare));
+  }, []);
 
   useEffect(() => {
     if (existingDraft && template) {
@@ -116,20 +124,58 @@ const EditorScreen: React.FC = () => {
     alert('Draft Saved!');
   };
 
-  const handleDownload = () => {
-    if (userMedia && template && canvasContainerRef.current) {
+  const handleDownload = async () => {
+    if (!userMedia || !template || !canvasContainerRef.current || isDownloading) return;
+
+    setIsDownloading(true);
+
+    try {
         const canvasSize = { 
-            width: canvasContainerRef.current.offsetWidth, 
-            height: canvasContainerRef.current.offsetHeight 
+            width: canvasContainerRef.current.offsetWidth * 2, // Export at 2x resolution
+            height: canvasContainerRef.current.offsetHeight * 2
         };
-        exportMedia(userMedia, template.png_url, transform, canvasSize, (dataUrl) => {
-            const link = document.createElement('a');
-            link.download = 'timepass-katta-creation.png';
-            link.href = dataUrl;
-            link.click();
-            addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: dataUrl });
+
+        const blob = await exportMedia(userMedia, template.png_url, transform, canvasSize);
+        const fileName = 'timepass-katta-creation.png';
+        const file = new File([blob], fileName, { type: 'image/png' });
+
+        const onSuccessfulExport = () => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: reader.result as string });
+            }
+            reader.readAsDataURL(blob);
             setIsDownloadComplete(true);
-        });
+        };
+
+        // Use Web Share API for mobile
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                files: [file],
+                title: 'My Timepass Katta Creation',
+                text: 'Check out this cool image I made!',
+            });
+            onSuccessfulExport();
+        } else {
+            // Fallback for desktop
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            onSuccessfulExport();
+        }
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+            console.log('Share canceled by user.');
+        } else {
+            console.error("Failed to export or share media:", error);
+            alert(`Could not create image. Error: ${error.message}`);
+        }
+    } finally {
+        setIsDownloading(false);
     }
   };
   
@@ -200,9 +246,20 @@ const EditorScreen: React.FC = () => {
 
             <div className="flex gap-2">
                 <button onClick={handleSaveDraft} disabled={!userMedia} className="w-full text-center p-3 rounded-[20px] bg-white text-[#2C3E50] font-bold disabled:opacity-50 shadow-sm">Save Draft</button>
-                <button onClick={handleDownload} disabled={!userMedia} className="w-full text-center p-3 rounded-[20px] bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2811] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                    <DownloadIcon className="w-6 h-6" />
-                    Download Now
+                <button onClick={handleDownload} disabled={!userMedia || isDownloading} className="w-full text-center p-3 rounded-[20px] bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2811] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                    {isDownloading ? 'Processing...' : (
+                        isMobile ? (
+                            <>
+                                <ShareIcon className="w-6 h-6" />
+                                <span>Share / Save</span>
+                            </>
+                        ) : (
+                            <>
+                                <DownloadIcon className="w-6 h-6" />
+                                <span>Download Now</span>
+                            </>
+                        )
+                    )}
                 </button>
             </div>
         </div>

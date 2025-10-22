@@ -25,6 +25,8 @@ const AdminEditTemplateScreen: React.FC = () => {
     
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
 
     useEffect(() => {
         if (templateId) {
@@ -42,6 +44,35 @@ const AdminEditTemplateScreen: React.FC = () => {
             }
         }
     }, [templateId, getTemplateById]);
+
+    useEffect(() => {
+        const currentPng = pngPreview;
+        const currentBg = bgPreview;
+        if (currentPng && currentBg && canvasRef.current) {
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            const bgImage = new Image();
+            bgImage.crossOrigin = 'anonymous';
+            bgImage.src = currentBg;
+            bgImage.onload = () => {
+                const pngImage = new Image();
+                pngImage.crossOrigin = 'anonymous';
+                pngImage.src = currentPng;
+                pngImage.onload = () => {
+                    const previewWidth = 400;
+                    canvas.width = previewWidth;
+                    canvas.height = previewWidth * 1.25; // Default to 4:5 aspect ratio
+                    ctx.clearRect(0,0, canvas.width, canvas.height);
+                    ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(pngImage, 0, 0, canvas.width, canvas.height);
+                };
+                 pngImage.onerror = () => console.error("Failed to load PNG preview for canvas");
+            };
+            bgImage.onerror = () => console.error("Failed to load BG preview for canvas");
+        }
+    }, [pngPreview, bgPreview]);
     
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, setFile: React.Dispatch<React.SetStateAction<File | null>>, setPreview: React.Dispatch<React.SetStateAction<string|null>>) => {
@@ -49,7 +80,15 @@ const AdminEditTemplateScreen: React.FC = () => {
         if (file) {
             setError('');
             setFile(file);
-            setPreview(URL.createObjectURL(file));
+            const newPreviewUrl = URL.createObjectURL(file);
+            
+            // Clean up old blob URL
+            setPreview(prev => {
+                if (prev && prev.startsWith('blob:')) {
+                    URL.revokeObjectURL(prev);
+                }
+                return newPreviewUrl;
+            });
         }
     };
     
@@ -65,8 +104,9 @@ const AdminEditTemplateScreen: React.FC = () => {
             setError('Please fill all required fields.');
             return;
         }
-        setError('');
+        
         setLoading(true);
+        setError('');
 
         const updatedData = {
             title,
@@ -78,15 +118,42 @@ const AdminEditTemplateScreen: React.FC = () => {
             is_active: isActive,
         };
 
-        try {
-            await updateTemplate(templateId, updatedData, { pngFile: pngFile || undefined, bgFile: bgFile || undefined });
-            alert('Template updated successfully!');
-            navigate('/templates');
-        } catch (err) {
-            console.error(err);
-            setError('Failed to update template. Please try again.');
-        } finally {
-            setLoading(false);
+        const newFiles: { pngFile?: File, bgFile?: File, compositeFile?: Blob } = {};
+        if(pngFile) newFiles.pngFile = pngFile;
+        if(bgFile) newFiles.bgFile = bgFile;
+
+        // Generate new composite ONLY if images were changed
+        if ((pngFile || bgFile) && canvasRef.current) {
+            canvasRef.current.toBlob(async (blob) => {
+                if (!blob) {
+                    setError('Could not generate new preview image.');
+                    setLoading(false);
+                    return;
+                }
+                newFiles.compositeFile = blob;
+                try {
+                    await updateTemplate(templateId, updatedData, newFiles);
+                    alert('Template updated successfully!');
+                    navigate('/templates');
+                } catch (err) {
+                    console.error(err);
+                    setError('Failed to update template. Please try again.');
+                } finally {
+                    setLoading(false);
+                }
+            }, 'image/jpeg', 0.9);
+        } else {
+            // No new images, just update data
+            try {
+                await updateTemplate(templateId, updatedData, newFiles);
+                alert('Template updated successfully!');
+                navigate('/templates');
+            } catch (err) {
+                console.error(err);
+                setError('Failed to update template. Please try again.');
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
@@ -114,6 +181,13 @@ const AdminEditTemplateScreen: React.FC = () => {
                             <label className="font-semibold text-[#2C3E50]">2. Replace Preview Background</label>
                             <input type="file" onChange={(e) => handleFileChange(e, setBgFile, setBgPreview)} accept="image/jpeg,image/png" className="w-full mt-1 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-[#FF7A00] hover:file:bg-orange-100"/>
                             {bgPreview && <img src={bgPreview} alt="bg preview" className="w-16 h-16 object-cover border rounded-md mt-2" />}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 className="font-semibold text-[#2C3E50] mb-2">3. Live Composite Preview</h3>
+                        <div className="bg-gray-100 rounded-lg p-2 flex justify-center">
+                            <canvas ref={canvasRef} className="rounded-md shadow-inner w-full max-w-[250px] aspect-[4/5]"></canvas>
                         </div>
                     </div>
                     

@@ -52,14 +52,14 @@ interface DataContextType {
   getSavedDesignById: (designId: string) => SavedDesign | undefined;
   saveDesign: (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => Promise<void>;
   addDownload: (downloadData: Omit<Download, 'id' | 'user_id' | 'timestamp'>) => Promise<void>;
-  submitTemplate: (submissionData: Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'status' | 'is_active' | 'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File}) => Promise<void>;
+  submitTemplate: (submissionData: Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'status' | 'is_active' | 'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
   getDownloadsForTemplate: (templateId: string) => number;
   updateUsername: (newUsername: string) => Promise<void>;
   submitSuggestion: (text: string) => Promise<void>;
 
   // Admin Actions
-  adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File}) => Promise<void>;
-  updateTemplate: (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File}) => Promise<void>;
+  adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
+  updateTemplate: (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File, compositeFile?: Blob}) => Promise<void>;
   deleteTemplate: (templateId: string) => Promise<void>;
   approveTemplate: (templateId: string) => Promise<void>;
   rejectTemplate: (templateId: string) => Promise<void>;
@@ -70,7 +70,7 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-const uploadFile = async (file: File, path: string): Promise<string> => {
+const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, file);
     return await getDownloadURL(storageRef);
@@ -94,7 +94,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (timestamp instanceof Timestamp) {
           return timestamp.toDate().toISOString();
       }
-      return timestamp || new Date().toISOString(); // Fallback
+      // Fallback for serverTimestamp pending writes
+      if (timestamp === null || timestamp === undefined) {
+        return new Date().toISOString();
+      }
+      return timestamp;
   }
   const toISOStringSafeOrNull = (timestamp: any): string | null => {
       if (timestamp instanceof Timestamp) {
@@ -136,9 +140,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
         setUsers(snapshot.docs.map(doc => {
             const data = doc.data();
+            // FIX: Explicitly create a plain object to prevent circular structure errors
             return {
                 id: doc.id,
-                ...data,
+                name: data.name,
+                photo_url: data.photo_url,
+                role: data.role,
+                creator_id: data.creator_id,
                 created_at: toISOStringSafe(data.created_at),
                 lastUsernameChangeAt: toISOStringSafeOrNull(data.lastUsernameChangeAt)
             } as User;
@@ -148,24 +156,47 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const unsubTemplates = onSnapshot(collection(db, "templates"), (snapshot) => {
         setTemplates(snapshot.docs.map(doc => {
             const data = doc.data();
+            // FIX: Explicitly create a plain object
             return {
                 id: doc.id,
-                ...data,
+                title: data.title,
+                category: data.category,
+                language: data.language,
+                tags: data.tags,
+                png_url: data.png_url,
+                bg_preview_url: data.bg_preview_url,
+                composite_preview_url: data.composite_preview_url,
+                status: data.status,
+                is_active: data.is_active,
+                ratio_default: data.ratio_default,
+                ratios_supported: data.ratios_supported,
+                uploader_id: data.uploader_id,
+                uploader_username: data.uploader_username,
                 created_at: toISOStringSafe(data.created_at)
             } as Template;
         }));
     }, (error) => console.error("Error fetching templates:", error));
 
     const unsubCategories = onSnapshot(collection(db, "categories"), (snapshot) => {
-        setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
+        setCategories(snapshot.docs.map(doc => {
+            const data = doc.data();
+            // FIX: Explicitly create a plain object
+            return { 
+                id: doc.id,
+                name: data.name
+            } as Category;
+        }));
     }, (error) => console.error("Error fetching categories:", error));
 
     const unsubSuggestions = onSnapshot(collection(db, "suggestions"), (snapshot) => {
         setSuggestions(snapshot.docs.map(doc => {
             const data = doc.data();
+            // FIX: Explicitly create a plain object
             return {
                 id: doc.id,
-                ...data,
+                user_id: data.user_id,
+                user_name: data.user_name,
+                text: data.text,
                 created_at: toISOStringSafe(data.created_at)
             } as Suggestion;
         }));
@@ -173,7 +204,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const unsubAppSettings = onSnapshot(doc(db, "settings", "app"), (doc) => {
         if (doc.exists()) {
-            setAppSettings(doc.data() as AppSettings);
+            const data = doc.data();
+            // FIX: Explicitly create a plain object
+            setAppSettings({
+                aboutUs: data.aboutUs,
+                terms: data.terms,
+                contactEmail: data.contactEmail
+            });
         }
     }, (error) => console.error("Error fetching app settings:", error));
 
@@ -198,9 +235,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const unsubBookmarks = onSnapshot(qBookmarks, (snapshot) => {
             setBookmarks(snapshot.docs.map(doc => {
                 const data = doc.data();
+                // FIX: Explicitly create a plain object
                 return {
                     id: doc.id,
-                    ...data,
+                    user_id: data.user_id,
+                    template_id: data.template_id,
                     created_at: toISOStringSafe(data.created_at)
                 } as Bookmark;
             }));
@@ -210,9 +249,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const unsubDesigns = onSnapshot(qDesigns, (snapshot) => {
             setSavedDesigns(snapshot.docs.map(doc => {
                 const data = doc.data();
+                // FIX: Explicitly create a plain object
                 return {
                     id: doc.id,
-                    ...data,
+                    user_id: data.user_id,
+                    template_id: data.template_id,
+                    ratio: data.ratio,
+                    layers_json: data.layers_json,
                     updated_at: toISOStringSafe(data.updated_at)
                 } as SavedDesign;
             }));
@@ -222,10 +265,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const unsubDownloads = onSnapshot(qDownloads, (snapshot) => {
             setDownloads(snapshot.docs.map(doc => {
                 const data = doc.data();
+                // FIX: Explicitly create a plain object
                 return {
                     id: doc.id,
-                    ...data,
-                    timestamp: toISOStringSafe(data.timestamp)
+                    user_id: data.user_id,
+                    template_id: data.template_id,
+                    design_id: data.design_id,
+                    file_url: data.file_url,
+                    local_only: data.local_only,
+                    timestamp: toISOStringSafe(data.timestamp),
+                    thumbnail: data.thumbnail
                 } as Download;
             }));
         });
@@ -307,14 +356,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const saveDesign = async (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => {
     if (!currentUser) return;
     
-    const dataToSave = {
-        ...designData,
-        user_id: currentUser.id,
-        updated_at: serverTimestamp(),
-    };
+    // CRITICAL BUG FIX: Separate logic for create (addDoc) and update (setDoc)
     if (designData.id) {
-        await setDoc(doc(db, "savedDesigns", designData.id), dataToSave, { merge: true });
+        // This is an UPDATE
+        const docRef = doc(db, "savedDesigns", designData.id);
+        const dataToSave = {
+            ...designData,
+            user_id: currentUser.id,
+            updated_at: serverTimestamp(),
+        };
+        await setDoc(docRef, dataToSave, { merge: true });
     } else {
+        // This is a CREATE - remove the undefined 'id' field
+        const { id, ...restOfData } = designData; 
+        const dataToSave = {
+            ...restOfData,
+            user_id: currentUser.id,
+            updated_at: serverTimestamp(),
+        };
         await addDoc(collection(db, "savedDesigns"), dataToSave);
     }
   };
@@ -328,7 +387,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
   };
   
-  const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File}) => {
+  const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
     if(!currentUser || currentUser.role !== Role.USER) return;
     
     const templateDocRef = doc(collection(db, 'templates'));
@@ -336,8 +395,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
     const bg_preview_url = await uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`);
-    
-    const composite_preview_url = bg_preview_url; // Placeholder
+    const composite_preview_url = await uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`);
 
     const newSubmission = {
         ...submissionData,
@@ -384,14 +442,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   // Admin functions
-  const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File}) => {
+  const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
       const templateDocRef = doc(collection(db, 'templates'));
       const templateId = templateDocRef.id;
 
       const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
       const bg_preview_url = await uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`);
-      const composite_preview_url = bg_preview_url; // Placeholder
+      const composite_preview_url = await uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`);
+
 
       const newTemplate = {
           ...submissionData,
@@ -407,7 +466,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await setDoc(templateDocRef, newTemplate);
   };
 
-  const updateTemplate = async (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File}) => {
+  const updateTemplate = async (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File, compositeFile?: Blob}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
 
       const updateData: any = { ...templateData };
@@ -416,7 +475,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       if(newFiles?.bgFile) {
           updateData.bg_preview_url = await uploadFile(newFiles.bgFile, `templates/${templateId}/bg_preview.jpg`);
-          updateData.composite_preview_url = updateData.bg_preview_url; // Placeholder
+      }
+      // CRITICAL BUG FIX: Handle composite file update
+      if(newFiles?.compositeFile) {
+          updateData.composite_preview_url = await uploadFile(newFiles.compositeFile, `templates/${templateId}/composite_preview.jpg`);
       }
       
       await updateDoc(doc(db, "templates", templateId), updateData);
@@ -428,6 +490,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if(template){
         try { await deleteObject(ref(storage, `templates/${templateId}/overlay.png`)); } catch(e) { console.error(e); }
         try { await deleteObject(ref(storage, `templates/${templateId}/bg_preview.jpg`)); } catch(e) { console.error(e); }
+        try { await deleteObject(ref(storage, `templates/${templateId}/composite_preview.jpg`)); } catch(e) { console.error(e); }
     }
     await deleteDoc(doc(db, "templates", templateId));
   };

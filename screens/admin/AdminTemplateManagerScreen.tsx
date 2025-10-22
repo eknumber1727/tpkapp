@@ -22,6 +22,7 @@ const AdminTemplateManagerScreen: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null);
     const [successMessage, setSuccessMessage] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
 
     const filteredTemplates = useMemo(() => {
         return templates.filter(template => {
@@ -40,15 +41,24 @@ const AdminTemplateManagerScreen: React.FC = () => {
         setTemplateToDelete(template);
         setIsModalOpen(true);
         setSuccessMessage('');
+        setErrorMessage('');
     };
 
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (!templateToDelete) return;
-        deleteTemplate(templateToDelete.id);
-        setSuccessMessage(`Template "${templateToDelete.title}" deleted successfully.`);
-        setIsModalOpen(false);
-        setTemplateToDelete(null);
-        setTimeout(() => setSuccessMessage(''), 3000);
+        try {
+            await deleteTemplate(templateToDelete.id);
+            setSuccessMessage(`Template "${templateToDelete.title}" deleted successfully.`);
+        } catch (error: any) {
+            setErrorMessage(`Failed to delete template: ${error.message}`);
+        } finally {
+            setIsModalOpen(false);
+            setTemplateToDelete(null);
+            setTimeout(() => {
+                setSuccessMessage('');
+                setErrorMessage('');
+            }, 5000);
+        }
     };
 
     return (
@@ -60,6 +70,8 @@ const AdminTemplateManagerScreen: React.FC = () => {
                 </div>
 
                 {successMessage && <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-4 rounded" role="alert"><p>{successMessage}</p></div>}
+                {errorMessage && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded" role="alert"><p>{errorMessage}</p></div>}
+
 
                 <div className="relative mb-4">
                     <input

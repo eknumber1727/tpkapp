@@ -23,23 +23,16 @@ const UserCreateTemplateScreen: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
     useEffect(() => {
-        // Pre-select first category if available and none is selected
-        if (categories.length > 0 && !category) {
-            // setCategory(categories[0].name); // This causes issues, let user select explicitly
-        }
-    }, [categories, category]);
-
-    useEffect(() => {
-        if (pngPreview && bgPreview && canvasRef.current) {
+        if (pngFile && bgFile && canvasRef.current) {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext('2d');
             if (!ctx) return;
 
             const bgImage = new Image();
-            bgImage.src = bgPreview;
+            bgImage.src = URL.createObjectURL(bgFile);
             bgImage.onload = () => {
                 const pngImage = new Image();
-                pngImage.src = pngPreview;
+                pngImage.src = URL.createObjectURL(pngFile);
                 pngImage.onload = () => {
                     const previewWidth = 400;
                     canvas.width = previewWidth;
@@ -47,10 +40,12 @@ const UserCreateTemplateScreen: React.FC = () => {
                     ctx.clearRect(0,0, canvas.width, canvas.height);
                     ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
                     ctx.drawImage(pngImage, 0, 0, canvas.width, canvas.height);
+                    URL.revokeObjectURL(bgImage.src);
+                    URL.revokeObjectURL(pngImage.src);
                 };
             };
         }
-    }, [pngPreview, bgPreview]);
+    }, [pngFile, bgFile]);
 
     const handleRatioChange = (ratio: AspectRatio) => {
         setRatios(prev => 
@@ -61,6 +56,9 @@ const UserCreateTemplateScreen: React.FC = () => {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, setFile: React.Dispatch<React.SetStateAction<File | null>>, setPreview: React.Dispatch<React.SetStateAction<string|null>>) => {
         const file = e.target.files?.[0];
         if (file) {
+            if(pngPreview) URL.revokeObjectURL(pngPreview);
+            if(bgPreview) URL.revokeObjectURL(bgPreview);
+
             setError('');
             setFile(file);
             setPreview(URL.createObjectURL(file));
@@ -73,34 +71,47 @@ const UserCreateTemplateScreen: React.FC = () => {
             setError('Please fill all fields, upload both images, and select a category.');
             return;
         }
+        if (!canvasRef.current) {
+            setError('Canvas not ready. Please wait a moment and try again.');
+            return;
+        }
+
         setError('');
         setLoading(true);
-
-        const submissionData = {
-            title,
-            category,
-            language,
-            tags: tags.split(',').map(t => t.trim()),
-            ratios_supported: ratios,
-            ratio_default: ratios[0] || '4:5',
-        };
         
-        try {
-            if(currentUser?.role === Role.ADMIN) {
-                await adminSubmitTemplate(submissionData, { pngFile, bgFile });
-                alert('Template published successfully!');
-                navigate('/templates');
-            } else {
-                await submitTemplate(submissionData, { pngFile, bgFile });
-                alert('Template submitted for review. Thank you!');
-                navigate('/');
+        canvasRef.current.toBlob(async (blob) => {
+            if (!blob) {
+                setError('Could not generate preview image.');
+                setLoading(false);
+                return;
             }
-        } catch(err) {
-            console.error(err);
-            setError('Failed to submit template. Please try again.');
-        } finally {
-            setLoading(false);
-        }
+
+            const submissionData = {
+                title,
+                category,
+                language,
+                tags: tags.split(',').map(t => t.trim()),
+                ratios_supported: ratios,
+                ratio_default: ratios[0] || '4:5',
+            };
+            
+            try {
+                if(currentUser?.role === Role.ADMIN) {
+                    await adminSubmitTemplate(submissionData, { pngFile, bgFile, compositeFile: blob });
+                    alert('Template published successfully!');
+                    navigate('/templates');
+                } else {
+                    await submitTemplate(submissionData, { pngFile, bgFile, compositeFile: blob });
+                    alert('Template submitted for review. Thank you!');
+                    navigate('/');
+                }
+            } catch(err) {
+                console.error(err);
+                setError('Failed to submit template. Please try again.');
+            } finally {
+                setLoading(false);
+            }
+        }, 'image/jpeg', 0.9);
     }
 
     const isAdmin = currentUser?.role === Role.ADMIN;

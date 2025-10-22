@@ -1,5 +1,24 @@
-// FIX: Imported the 'AspectRatio' type from '../types' to resolve the TypeScript error.
 import { AspectRatio } from '../types';
+
+// Helper to rewrite Firebase Storage URLs to use the Netlify proxy
+const rewriteFirebaseUrl = (url: string): string => {
+    if (url.startsWith('https://firebasestorage.googleapis.com/')) {
+        // Example: https://firebasestorage.googleapis.com/v0/b/....
+        // Becomes: /api/images/v0/b/....
+        try {
+            const urlObject = new URL(url);
+            // The full path including the '/v0/b/...' part
+            return `/api/images${urlObject.pathname}${urlObject.search}`;
+        } catch (e) {
+            // Fallback for invalid URLs, though unlikely
+            console.error("Could not parse Firebase URL:", url);
+            return url;
+        }
+    }
+    // Don't rewrite local blob URLs (from user uploads) or data URLs
+    return url;
+};
+
 
 // A helper to draw image with transformations
 const drawTransformedImage = (ctx: CanvasRenderingContext2D, image: HTMLImageElement | HTMLVideoElement, transform: { x: number; y: number; scale: number; }) => {
@@ -10,50 +29,80 @@ const drawTransformedImage = (ctx: CanvasRenderingContext2D, image: HTMLImageEle
     ctx.restore();
 };
 
-export const exportMedia = (
+const loadImage = (src: string): Promise<HTMLImageElement> => {
+    // No proxy for local blob URLs
+    const finalSrc = src.startsWith('blob:') ? src : rewriteFirebaseUrl(src);
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        // Required for fetching from Firebase Storage URL even with proxy
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = (e) => reject(new Error(`Failed to load image: ${src}. This may be a CORS issue.`));
+        img.src = finalSrc;
+    });
+};
+
+const loadVideoFrame = (src: string): Promise<HTMLVideoElement> => {
+    // No proxy for local blob URLs
+    const finalSrc = src.startsWith('blob:') ? src : rewriteFirebaseUrl(src);
+    return new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        video.crossOrigin = "anonymous";
+        video.onloadeddata = () => {
+            video.currentTime = 0;
+        };
+        video.onseeked = () => resolve(video);
+        video.onerror = (e) => reject(new Error(`Failed to load video: ${src}`));
+        video.src = finalSrc;
+        video.load(); // Required for some browsers
+    });
+}
+
+export const exportMedia = async (
     userMedia: { src: string, type: 'image' | 'video' },
     templateImageSrc: string,
     transform: { x: number; y: number; scale: number; },
-    canvasSize: { width: number; height: number; },
-    onExportReady: (dataUrl: string) => void
-) => {
-    const templateImage = new Image();
-    templateImage.crossOrigin = 'anonymous';
-    templateImage.src = templateImageSrc;
-
+    canvasSize: { width: number; height: number; }
+): Promise<Blob> => {
     const canvas = document.createElement('canvas');
     canvas.width = canvasSize.width;
     canvas.height = canvasSize.height;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+        throw new Error('Could not get canvas context');
+    }
 
-    templateImage.onload = () => {
+    try {
+        const templateImage = await loadImage(templateImageSrc);
+        let mediaElement: HTMLImageElement | HTMLVideoElement;
+
         if (userMedia.type === 'image') {
-            const userImage = new Image();
-            userImage.crossOrigin = 'anonymous';
-            userImage.src = userMedia.src;
-            userImage.onload = () => {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawTransformedImage(ctx, userImage, transform);
-                ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
-                onExportReady(canvas.toDataURL('image/png'));
-            };
-        } else { // Video
-            const video = document.createElement('video');
-            video.crossOrigin = 'anonymous';
-            video.src = userMedia.src;
-            video.addEventListener('loadeddata', () => {
-                video.currentTime = 0; // Go to first frame
-            });
-            video.addEventListener('seeked', () => {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawTransformedImage(ctx, video, transform);
-                ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
-                onExportReady(canvas.toDataURL('image/png'));
-                alert("Video overlay export is not supported on this device. The first frame has been exported as an image.");
-            });
+            mediaElement = await loadImage(userMedia.src);
+        } else {
+            mediaElement = await loadVideoFrame(userMedia.src);
+            if (mediaElement instanceof HTMLVideoElement) {
+                 // We are only exporting the first frame as an image.
+            }
         }
-    };
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawTransformedImage(ctx, mediaElement, transform);
+        ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
+        
+        return await new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    resolve(blob);
+                } else {
+                    reject(new Error('Failed to create blob from canvas.'));
+                }
+            }, 'image/png');
+        });
+
+    } catch (error) {
+        console.error("Error during media export:", error);
+        throw error; // Re-throw the error to be caught by the caller
+    }
 };
 
 export const getAspectRatioDecimal = (ratio: AspectRatio): number => {
