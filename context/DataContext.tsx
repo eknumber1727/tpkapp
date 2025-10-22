@@ -109,15 +109,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const userDocRef = doc(db, "users", user.uid);
             const userDoc = await getDoc(userDocRef);
             if(userDoc.exists()){
-                const userDataFromDb = userDoc.data() as Omit<UserFromFirestore, 'id'>;
-                const userData: User = { 
+                const userDataFromDb = userDoc.data();
+                // FIX: Explicitly create a plain object to prevent circular structure errors
+                const plainUserObject: User = { 
                     id: user.uid, 
-                    ...userDataFromDb,
+                    name: userDataFromDb.name,
+                    photo_url: userDataFromDb.photo_url,
+                    role: userDataFromDb.role,
+                    creator_id: userDataFromDb.creator_id,
                     created_at: toISOStringSafe(userDataFromDb.created_at),
                     lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt)
                 };
-                setCurrentUser(userData);
-                localStorage.setItem('timepass-katta-user', JSON.stringify(userData));
+                setCurrentUser(plainUserObject);
+                localStorage.setItem('timepass-katta-user', JSON.stringify(plainUserObject));
             }
         } else {
             setCurrentUser(null);
@@ -252,10 +256,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!userDoc.exists()) {
         throw new Error("User data not found.");
     }
-    const userDataFromDb = userDoc.data() as Omit<UserFromFirestore, 'id'>;
+    const userDataFromDb = userDoc.data();
+    // FIX: Explicitly create a plain object to prevent circular structure errors
     return { 
         id: userCredential.user.uid, 
-        ...userDataFromDb,
+        name: userDataFromDb.name,
+        photo_url: userDataFromDb.photo_url,
+        role: userDataFromDb.role,
+        creator_id: userDataFromDb.creator_id,
         created_at: toISOStringSafe(userDataFromDb.created_at),
         lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt)
     };
