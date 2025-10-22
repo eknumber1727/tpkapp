@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { ASPECT_RATIOS, LANGUAGES } from '../../constants';
 import { CategoryName, AspectRatio, Role } from '../../types';
@@ -11,7 +11,7 @@ const UserCreateTemplateScreen: React.FC = () => {
     const { currentUser, submitTemplate, adminSubmitTemplate, categories } = useData();
 
     const [title, setTitle] = useState('');
-    const [category, setCategory] = useState<CategoryName>(categories[0]?.name || '');
+    const [category, setCategory] = useState<CategoryName>('');
     const [language, setLanguage] = useState<string>(LANGUAGES[0]);
     const [tags, setTags] = useState('');
     const [ratios, setRatios] = useState<AspectRatio[]>(['4:5']);
@@ -74,8 +74,8 @@ const UserCreateTemplateScreen: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!pngFile || !bgFile || ratios.length === 0 || !title.trim() || !tags.trim()) {
-            setError('Please fill all fields and upload both images.');
+        if (!pngFile || !bgFile || ratios.length === 0 || !title.trim() || !tags.trim() || !category) {
+            setError('Please fill all fields, upload both images, and select a category.');
             return;
         }
         setError('');
@@ -145,9 +145,16 @@ const UserCreateTemplateScreen: React.FC = () => {
                     </div>
                      <div>
                         <label className="font-semibold text-[#2C3E50]">Category</label>
-                        <select value={category} onChange={e => setCategory(e.target.value as CategoryName)} className="w-full mt-1 p-2 border rounded-lg bg-white">
-                            {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
-                        </select>
+                        {categories.length > 0 ? (
+                            <select value={category} onChange={e => setCategory(e.target.value as CategoryName)} className="w-full mt-1 p-2 border rounded-lg bg-white">
+                                {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
+                            </select>
+                        ) : (
+                            <div className="mt-1 p-2 border rounded-lg bg-gray-100 text-sm text-gray-500 text-center">
+                                No categories found. 
+                                {isAdmin && <Link to="/categories" className="text-blue-600 hover:underline ml-1">Create a category first.</Link>}
+                            </div>
+                        )}
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Language</label>
