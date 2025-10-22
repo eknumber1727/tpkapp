@@ -37,7 +37,7 @@ const UserHomeScreen: React.FC = () => {
 
   return (
     <div className="flex flex-col">
-      <div className="sticky top-[70px] z-30 bg-[#F8F9FA] pt-4 shadow-sm">
+      <div className="sticky top-16 z-30 bg-[#F8F9FA] pt-4 pb-2 shadow-sm">
         <div className="px-4 flex gap-2 items-center">
           <div className="relative flex-grow">
             <input
