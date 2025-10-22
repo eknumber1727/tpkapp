@@ -1,0 +1,4 @@
+[[redirects]]
+  from = "/api/images/*"
+  to = "https://firebasestorage.googleapis.com/:splat"
+  status = 200
