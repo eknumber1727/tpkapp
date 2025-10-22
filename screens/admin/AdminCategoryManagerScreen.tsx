@@ -12,15 +12,19 @@ const AdminCategoryManagerScreen: React.FC = () => {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
-    const handleAddCategory = (e: React.FormEvent) => {
+    const handleAddCategory = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setSuccess('');
         if (newCategoryName.trim()) {
-            addCategory(newCategoryName);
-            setNewCategoryName('');
-            setSuccess(`Category "${newCategoryName}" added successfully.`);
-            setTimeout(() => setSuccess(''), 3000);
+            try {
+                await addCategory(newCategoryName);
+                setNewCategoryName('');
+                setSuccess(`Category "${newCategoryName}" added successfully.`);
+                setTimeout(() => setSuccess(''), 3000);
+            } catch (err: any) {
+                setError(err.message);
+            }
         }
     };
 
@@ -31,18 +35,20 @@ const AdminCategoryManagerScreen: React.FC = () => {
         setSuccess('');
     };
 
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (!categoryToDelete) return;
         try {
-            deleteCategory(categoryToDelete.id);
+            await deleteCategory(categoryToDelete.id);
             setSuccess(`Category "${categoryToDelete.name}" deleted successfully.`);
-            setTimeout(() => setSuccess(''), 3000);
         } catch (err: any) {
             setError(err.message);
-            setTimeout(() => setError(''), 5000);
         } finally {
             setIsModalOpen(false);
             setCategoryToDelete(null);
+            setTimeout(() => {
+              setSuccess('');
+              setError('');
+            }, 5000);
         }
     };
 

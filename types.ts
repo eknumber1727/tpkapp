@@ -1,3 +1,5 @@
+import { Timestamp } from 'firebase/firestore';
+
 export enum Role {
   USER = 'user',
   ADMIN = 'admin',
@@ -18,7 +20,19 @@ export enum SubmissionStatus {
 
 export type AspectRatio = '4:5' | '1:1' | '9:16' | '16:9' | '3:4';
 
-// Data Models
+// Data Models - Raw from Firestore (uses Timestamp)
+export interface UserFromFirestore {
+  id: string;
+  name: string;
+  photo_url: string;
+  role: Role;
+  password?: string;
+  creator_id: string;
+  created_at: Timestamp;
+  lastUsernameChangeAt: Timestamp | null;
+}
+
+// Data Models - Used in App State (uses string for dates)
 export interface User {
   id: string; // user email or UUID
   name: string;
@@ -26,7 +40,7 @@ export interface User {
   role: Role;
   password?: string;
   creator_id: string; // Unique, user-facing ID
-  created_at: string;
+  created_at: string; // ISO Date string
   lastUsernameChangeAt: string | null; // ISO Date string
 }
 
@@ -37,9 +51,9 @@ export interface Template {
   language: string;
   tags: string[];
   
-  png_url: string; // REQUIRED: transparent PNG (no background)
-  bg_preview_url: string; // REQUIRED: preview background image
-  composite_preview_url: string; // AUTO: server/app merges png_url over bg_preview_url
+  png_url: string;
+  bg_preview_url: string;
+  composite_preview_url: string;
   
   status: SubmissionStatus;
   is_active: boolean;
@@ -49,24 +63,14 @@ export interface Template {
   
   uploader_id: string;
   uploader_username: string;
-  created_at: string;
-
-  // Optional/Future fields from spec
-  thumbnail_url?: string;
-  has_transparency?: boolean;
-  approved_by?: string;
-  published_at?: string;
-  views?: number;
-  creates?: number;
-  downloads?: number;
-  bookmarks?: number;
+  created_at: string; // ISO Date string
 }
 
 export interface Bookmark {
     id: string;
     user_id: string;
     template_id: string;
-    created_at: string;
+    created_at: string; // ISO Date string
 }
 
 export interface SavedDesignLayer {
@@ -94,7 +98,7 @@ export interface SavedDesign {
     template_id: string;
     ratio: AspectRatio;
     layers_json: SavedDesignLayer;
-    updated_at: string;
+    updated_at: string; // ISO Date string
 }
 
 export interface Download {
@@ -104,8 +108,8 @@ export interface Download {
     design_id: string | null;
     file_url?: string;
     local_only: boolean;
-    timestamp: string;
-    thumbnail?: string; // Storing a thumbnail of the download for the UI
+    timestamp: string; // ISO Date string
+    thumbnail?: string;
 }
 
 export interface Suggestion {
@@ -113,7 +117,7 @@ export interface Suggestion {
   user_id: string;
   user_name: string;
   text: string;
-  created_at: string;
+  created_at: string; // ISO Date string
 }
 
 export interface AppSettings {

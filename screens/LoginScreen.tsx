@@ -75,10 +75,7 @@ const LoginScreen: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#F8F9FA] p-4">
       <div className="w-full max-w-sm mx-auto bg-white p-8 rounded-[30px] shadow-lg">
-        <div className="flex justify-center mb-4">
-          <img src="/logo192.png" alt="Timepass Katta Logo" className="w-24 h-24" />
-        </div>
-        <h1 className="text-3xl font-bold text-center text-[#2C3E50]">
+        <h1 className="text-3xl font-bold text-center text-[#2C3E50] mb-2">
           {APP_NAME}
         </h1>
         <p className="text-center text-[#7F8C8D] mt-2 mb-6">

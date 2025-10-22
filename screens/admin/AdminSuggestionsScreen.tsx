@@ -14,7 +14,7 @@ const AdminSuggestionsScreen: React.FC = () => {
                         <p className="text-[#2C3E50]">{suggestion.text}</p>
                         <div className="mt-3 border-t pt-2 text-xs text-[#7F8C8D] flex justify-between items-center">
                             <span>By: <span className="font-semibold text-[#2C3E50]">{suggestion.user_name}</span></span>
-                             <span>{new Date(suggestion.created_at).toLocaleString()}</span>
+                             <span>{suggestion.created_at ? new Date(suggestion.created_at).toLocaleString() : 'Just now'}</span>
                         </div>
                     </div>
                 ))}

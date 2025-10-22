@@ -1,9 +1,8 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { User } from './types';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -21,15 +20,3 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
-
-export const onAuthUserChanged = (callback: (user: User | null) => void) => {
-    return onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            // In a real app, you would fetch the user's role and other details from Firestore
-            // For now, we'll assume the basic user object is enough for the session
-            callback(user as unknown as User); 
-        } else {
-            callback(null);
-        }
-    });
-};

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Template, Bookmark, SavedDesign, Download, Role, SubmissionStatus, Category, CategoryName, Suggestion, AppSettings } from '../types';
+import { User, Template, Bookmark, SavedDesign, Download, Role, SubmissionStatus, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore } from '../types';
 import { auth, db, storage } from '../firebase';
 import { 
     createUserWithEmailAndPassword, 
@@ -20,7 +20,7 @@ import {
     query,
     where,
     getDocs,
-    writeBatch
+    Timestamp
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
@@ -89,13 +89,33 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Safely convert Firestore Timestamp to ISO string
+  const toISOStringSafe = (timestamp: any): string => {
+      if (timestamp instanceof Timestamp) {
+          return timestamp.toDate().toISOString();
+      }
+      return timestamp || new Date().toISOString(); // Fallback
+  }
+  const toISOStringSafeOrNull = (timestamp: any): string | null => {
+      if (timestamp instanceof Timestamp) {
+          return timestamp.toDate().toISOString();
+      }
+      return null;
+  }
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
             const userDocRef = doc(db, "users", user.uid);
             const userDoc = await getDoc(userDocRef);
             if(userDoc.exists()){
-                const userData = { id: user.uid, ...userDoc.data() } as User;
+                const userDataFromDb = userDoc.data() as Omit<UserFromFirestore, 'id'>;
+                const userData: User = { 
+                    id: user.uid, 
+                    ...userDataFromDb,
+                    created_at: toISOStringSafe(userDataFromDb.created_at),
+                    lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt)
+                };
                 setCurrentUser(userData);
                 localStorage.setItem('timepass-katta-user', JSON.stringify(userData));
             }
@@ -110,22 +130,48 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-        setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
-    });
+        setUsers(snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                created_at: toISOStringSafe(data.created_at),
+                lastUsernameChangeAt: toISOStringSafeOrNull(data.lastUsernameChangeAt)
+            } as User;
+        }));
+    }, (error) => console.error("Error fetching users:", error));
+
     const unsubTemplates = onSnapshot(collection(db, "templates"), (snapshot) => {
-        setTemplates(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Template)));
-    });
+        setTemplates(snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                created_at: toISOStringSafe(data.created_at)
+            } as Template;
+        }));
+    }, (error) => console.error("Error fetching templates:", error));
+
     const unsubCategories = onSnapshot(collection(db, "categories"), (snapshot) => {
         setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
-    });
+    }, (error) => console.error("Error fetching categories:", error));
+
     const unsubSuggestions = onSnapshot(collection(db, "suggestions"), (snapshot) => {
-        setSuggestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Suggestion)));
-    });
+        setSuggestions(snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                created_at: toISOStringSafe(data.created_at)
+            } as Suggestion;
+        }));
+    }, (error) => console.error("Error fetching suggestions:", error));
+
     const unsubAppSettings = onSnapshot(doc(db, "settings", "app"), (doc) => {
         if (doc.exists()) {
             setAppSettings(doc.data() as AppSettings);
         }
-    });
+    }, (error) => console.error("Error fetching app settings:", error));
 
     return () => {
         unsubUsers();
@@ -146,17 +192,38 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         const qBookmarks = query(collection(db, "bookmarks"), where("user_id", "==", currentUser.id));
         const unsubBookmarks = onSnapshot(qBookmarks, (snapshot) => {
-            setBookmarks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bookmark)));
+            setBookmarks(snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    created_at: toISOStringSafe(data.created_at)
+                } as Bookmark;
+            }));
         });
 
         const qDesigns = query(collection(db, "savedDesigns"), where("user_id", "==", currentUser.id));
         const unsubDesigns = onSnapshot(qDesigns, (snapshot) => {
-            setSavedDesigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SavedDesign)));
+            setSavedDesigns(snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    updated_at: toISOStringSafe(data.updated_at)
+                } as SavedDesign;
+            }));
         });
         
         const qDownloads = query(collection(db, "downloads"), where("user_id", "==", currentUser.id));
         const unsubDownloads = onSnapshot(qDownloads, (snapshot) => {
-            setDownloads(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Download)));
+            setDownloads(snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    timestamp: toISOStringSafe(data.timestamp)
+                } as Download;
+            }));
         });
 
         return () => {
@@ -168,16 +235,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const signup = async (name: string, email: string, password: string) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const newUser: Omit<User, 'id'> = {
+    const newUser = {
         name,
         photo_url: `https://i.pravatar.cc/150?u=${userCredential.user.uid}`,
         role: Role.USER,
         creator_id: `TK${Date.now().toString().slice(-6)}`,
-        created_at: new Date().toISOString(),
+        created_at: serverTimestamp(),
         lastUsernameChangeAt: null,
     };
     await setDoc(doc(db, "users", userCredential.user.uid), newUser);
-    // The onAuthStateChanged listener will automatically log the user in.
   };
 
   const login = async (email: string, password: string): Promise<User> => {
@@ -186,7 +252,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!userDoc.exists()) {
         throw new Error("User data not found.");
     }
-    return { id: userCredential.user.uid, ...userDoc.data() } as User;
+    const userDataFromDb = userDoc.data() as Omit<UserFromFirestore, 'id'>;
+    return { 
+        id: userCredential.user.uid, 
+        ...userDataFromDb,
+        created_at: toISOStringSafe(userDataFromDb.created_at),
+        lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt)
+    };
   };
 
   const startSession = (user: User) => {
@@ -232,10 +304,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user_id: currentUser.id,
         updated_at: serverTimestamp(),
     };
-    delete (dataToSave as any).id; // Don't save the id field in the document
-
     if (designData.id) {
-        await setDoc(doc(db, "savedDesigns", designData.id), dataToSave);
+        await setDoc(doc(db, "savedDesigns", designData.id), dataToSave, { merge: true });
     } else {
         await addDoc(collection(db, "savedDesigns"), dataToSave);
     }
@@ -276,7 +346,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const getDownloadsForTemplate = (templateId: string) => {
-    // This should ideally be a backend aggregation for performance
     return downloads.filter(d => d.template_id === templateId).length;
   }
 
@@ -293,7 +362,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       const userDocRef = doc(db, "users", currentUser.id);
-      await updateDoc(userDocRef, { name: newUsername, lastUsernameChangeAt: now.toISOString() });
+      await updateDoc(userDocRef, { name: newUsername, lastUsernameChangeAt: serverTimestamp() });
   }
 
   const submitSuggestion = async (text: string) => {
