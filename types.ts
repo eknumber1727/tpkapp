@@ -30,6 +30,7 @@ export interface UserFromFirestore {
   creator_id: string;
   created_at: Timestamp;
   lastUsernameChangeAt: Timestamp | null;
+  fcmTokens?: string[];
 }
 
 // Data Models - Used in App State (uses string for dates)
@@ -42,6 +43,7 @@ export interface User {
   creator_id: string; // Unique, user-facing ID
   created_at: string; // ISO Date string
   lastUsernameChangeAt: string | null; // ISO Date string
+  fcmTokens?: string[];
 }
 
 export interface Template {
@@ -64,9 +66,18 @@ export interface Template {
   uploader_id: string;
   uploader_username: string;
   created_at: string; // ISO Date string
+  downloadCount?: number;
+  likeCount?: number;
 }
 
 export interface Bookmark {
+    id: string;
+    user_id: string;
+    template_id: string;
+    created_at: string; // ISO Date string
+}
+
+export interface Like {
     id: string;
     user_id: string;
     template_id: string;
@@ -124,4 +135,11 @@ export interface AppSettings {
   aboutUs: string;
   terms: string;
   contactEmail: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  sent_at: string; // ISO Date string
 }

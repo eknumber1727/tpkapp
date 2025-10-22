@@ -1,6 +1,6 @@
 // Import and initialize the Firebase SDK
-import { initializeApp } from "firebase/app";
-import { getMessaging } from "firebase/messaging/sw";
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/messaging';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBRn-dfdvPQ6ELMGDsFKTvUngez6Ly4yn4",
@@ -12,8 +12,19 @@ const firebaseConfig = {
   measurementId: "G-D054Y6RX16"
 };
 
-const app = initializeApp(firebaseConfig);
-const messaging = getMessaging(app);
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
 
-// Background message handler can be added here if needed
+messaging.onBackgroundMessage((payload) => {
+  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  
+  const notificationTitle = payload.notification?.title || 'New Message';
+  const notificationOptions = {
+    body: payload.notification?.body || 'You have a new notification.',
+    icon: '/icons/icon-192x192.png'
+  };
+
+  self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
 console.log('Firebase messaging service worker initialized.');

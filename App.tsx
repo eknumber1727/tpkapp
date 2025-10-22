@@ -14,6 +14,7 @@ import UserLayout from './screens/user/UserLayout';
 import AboutUsScreen from './screens/user/AboutUsScreen';
 import TermsScreen from './screens/user/TermsScreen';
 import ContactUsScreen from './screens/user/ContactUsScreen';
+import CreatorProfileScreen from './screens/user/CreatorProfileScreen';
 
 import AdminDashboardScreen from './screens/admin/AdminDashboardScreen';
 import AdminTemplateManagerScreen from './screens/admin/AdminTemplateManagerScreen';
@@ -24,6 +25,7 @@ import { Role } from './types';
 import AdminCategoryManagerScreen from './screens/admin/AdminCategoryManagerScreen';
 import AdminAppSettingsManagerScreen from './screens/admin/AppSettingsManagerScreen';
 import AdminSuggestionsScreen from './screens/admin/AdminSuggestionsScreen';
+import AdminNotificationsManagerScreen from './screens/admin/AdminNotificationsManagerScreen';
 
 const UserRoutes = () => (
   <UserLayout>
@@ -34,6 +36,7 @@ const UserRoutes = () => (
       <Route path="/profile" element={<UserProfileScreen />} />
       <Route path="/saved-designs" element={<UserSavedDesignsScreen />} />
       <Route path="/create-template" element={<UserCreateTemplateScreen />} />
+      <Route path="/creator/:creatorId" element={<CreatorProfileScreen />} />
       <Route path="/editor/:templateId" element={<EditorScreen />} />
       <Route path="/editor/:templateId/draft/:designId" element={<EditorScreen />} />
       <Route path="/about" element={<AboutUsScreen />} />
@@ -53,6 +56,7 @@ const AdminRoutes = () => (
       <Route path="/categories" element={<AdminCategoryManagerScreen />} />
       <Route path="/suggestions" element={<AdminSuggestionsScreen />} />
       <Route path="/settings" element={<AdminAppSettingsManagerScreen />} />
+      <Route path="/notifications" element={<AdminNotificationsManagerScreen />} />
       <Route path="/create-template" element={<UserCreateTemplateScreen />} />
       <Route path="/templates/:templateId/edit" element={<AdminEditTemplateScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Template, Bookmark, SavedDesign, Download, Role, SubmissionStatus, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore } from '../types';
+import { User, Template, Bookmark, SavedDesign, Download, Role, SubmissionStatus, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like } from '../types';
 // FIX: Import firebase default for compat types, and named exports for service instances.
-import firebase, { auth, db, storage } from '../firebase';
+import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -10,13 +10,16 @@ interface DataContextType {
   users: User[];
   templates: Template[];
   bookmarks: Bookmark[];
+  likes: Like[];
   savedDesigns: SavedDesign[];
   downloads: Download[];
   categories: Category[];
   suggestions: Suggestion[];
+  notifications: Notification[];
   appSettings: AppSettings;
   currentUser: User | null;
   loading: boolean;
+  notificationPermission: NotificationPermission;
 
   // Auth
   signup: (name: string, email: string, password: string) => Promise<void>;
@@ -28,6 +31,8 @@ interface DataContextType {
   getTemplateById: (templateId: string) => Template | undefined;
   getIsBookmarked: (templateId: string) => boolean;
   toggleBookmark: (templateId: string) => Promise<void>;
+  getIsLiked: (templateId: string) => boolean;
+  toggleLike: (templateId: string) => Promise<void>;
   getSavedDesignById: (designId: string) => SavedDesign | undefined;
   saveDesign: (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => Promise<void>;
   addDownload: (downloadData: Omit<Download, 'id' | 'user_id' | 'timestamp'>) => Promise<void>;
@@ -35,6 +40,7 @@ interface DataContextType {
   getDownloadsForTemplate: (templateId: string) => number;
   updateUsername: (newUsername: string) => Promise<void>;
   submitSuggestion: (text: string) => Promise<void>;
+  subscribeToNotifications: () => Promise<void>;
 
   // Admin Actions
   adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
@@ -45,6 +51,11 @@ interface DataContextType {
   addCategory: (name: CategoryName) => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
   updateAppSettings: (settings: Partial<AppSettings>) => Promise<void>;
+  sendNotification: (title: string, body: string) => Promise<void>;
+
+  // PWA Install
+  installPromptEvent: any | null;
+  triggerInstallPrompt: () => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -61,13 +72,47 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [users, setUsers] = useState<User[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [likes, setLikes] = useState<Like[]>([]);
   const [savedDesigns, setSavedDesigns] = useState<SavedDesign[]>([]);
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>({aboutUs: '', terms: '', contactEmail: ''});
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [installPromptEvent, setInstallPromptEvent] = useState<any | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+        e.preventDefault();
+        setInstallPromptEvent(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const triggerInstallPrompt = () => {
+      if (!installPromptEvent) return;
+      installPromptEvent.prompt();
+      installPromptEvent.userChoice.then((choiceResult: { outcome: string }) => {
+          if (choiceResult.outcome === 'accepted') {
+              console.log('User accepted the install prompt');
+          } else {
+              console.log('User dismissed the install prompt');
+          }
+          setInstallPromptEvent(null);
+      });
+  };
 
   // Safely convert Firestore Timestamp to ISO string
   const toISOStringSafe = (timestamp: any): string => {
@@ -97,7 +142,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const userDocRef = db.collection("users").doc(user.uid);
             const userDoc = await userDocRef.get();
             if(userDoc.exists){
-                const userDataFromDb = userDoc.data();
+                const userDataFromDb = userDoc.data() as UserFromFirestore;
                 // FIX: Explicitly create a plain object to prevent circular structure errors
                 const plainUserObject: User = { 
                     id: user.uid, 
@@ -106,7 +151,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     role: userDataFromDb.role,
                     creator_id: userDataFromDb.creator_id,
                     created_at: toISOStringSafe(userDataFromDb.created_at),
-                    lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt)
+                    lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
+                    fcmTokens: userDataFromDb.fcmTokens || []
                 };
                 setCurrentUser(plainUserObject);
                 localStorage.setItem('timepass-katta-user', JSON.stringify(plainUserObject));
@@ -133,13 +179,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 role: data.role,
                 creator_id: data.creator_id,
                 created_at: toISOStringSafe(data.created_at),
-                lastUsernameChangeAt: toISOStringSafeOrNull(data.lastUsernameChangeAt)
+                lastUsernameChangeAt: toISOStringSafeOrNull(data.lastUsernameChangeAt),
+                fcmTokens: data.fcmTokens || []
             } as User;
         }));
     }, (error) => console.error("Error fetching users:", error));
 
     const unsubTemplates = db.collection("templates").onSnapshot((snapshot) => {
-        setTemplates(snapshot.docs.map(doc => {
+        const fetchedTemplates = snapshot.docs.map(doc => {
             const data = doc.data();
             // FIX: Explicitly create a plain object
             return {
@@ -157,9 +204,39 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 ratios_supported: data.ratios_supported,
                 uploader_id: data.uploader_id,
                 uploader_username: data.uploader_username,
-                created_at: toISOStringSafe(data.created_at)
+                created_at: toISOStringSafe(data.created_at),
+                downloadCount: 0, // Initialize download count
+                likeCount: 0 // Initialize like count
             } as Template;
-        }));
+        });
+
+        // Fetch all downloads and likes to calculate counts
+        const downloadsPromise = db.collection("downloads").get();
+        const likesPromise = db.collection("likes").get();
+
+        Promise.all([downloadsPromise, likesPromise]).then(([downloadSnapshot, likeSnapshot]) => {
+            const downloadCounts = new Map<string, number>();
+            downloadSnapshot.docs.forEach(doc => {
+                const templateId = doc.data().template_id;
+                downloadCounts.set(templateId, (downloadCounts.get(templateId) || 0) + 1);
+            });
+
+            const likeCounts = new Map<string, number>();
+            likeSnapshot.docs.forEach(doc => {
+                const templateId = doc.data().template_id;
+                likeCounts.set(templateId, (likeCounts.get(templateId) || 0) + 1);
+            });
+
+            // Attach counts to templates
+            const templatesWithCounts = fetchedTemplates.map(template => ({
+                ...template,
+                downloadCount: downloadCounts.get(template.id) || 0,
+                likeCount: likeCounts.get(template.id) || 0
+            }));
+            
+            setTemplates(templatesWithCounts);
+        });
+
     }, (error) => console.error("Error fetching templates:", error));
 
     const unsubCategories = db.collection("categories").onSnapshot((snapshot) => {
@@ -187,6 +264,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
     }, (error) => console.error("Error fetching suggestions:", error));
 
+     const unsubNotifications = db.collection("notifications").orderBy("sent_at", "desc").onSnapshot((snapshot) => {
+        setNotifications(snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                title: data.title,
+                body: data.body,
+                sent_at: toISOStringSafe(data.sent_at),
+            } as Notification;
+        }));
+    }, (error) => console.error("Error fetching notifications:", error));
+
     const unsubAppSettings = db.collection("settings").doc("app").onSnapshot((doc) => {
         if (doc.exists) {
             const data = doc.data();
@@ -205,6 +294,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         unsubCategories();
         unsubSuggestions();
         unsubAppSettings();
+        unsubNotifications();
     };
   }, []);
   
@@ -213,6 +303,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setBookmarks([]);
             setSavedDesigns([]);
             setDownloads([]);
+            setLikes([]);
             return;
         }
         
@@ -228,6 +319,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     template_id: data.template_id,
                     created_at: toISOStringSafe(data.created_at)
                 } as Bookmark;
+            }));
+        });
+
+        const qLikes = db.collection("likes").where("user_id", "==", currentUser.id);
+        const unsubLikes = qLikes.onSnapshot((snapshot) => {
+            setLikes(snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    user_id: data.user_id,
+                    template_id: data.template_id,
+                    created_at: toISOStringSafe(data.created_at)
+                } as Like;
             }));
         });
 
@@ -269,6 +373,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             unsubBookmarks();
             unsubDesigns();
             unsubDownloads();
+            unsubLikes();
         };
     }, [currentUser]);
 
@@ -283,6 +388,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // FIX: Use compat firestore API for serverTimestamp
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
         lastUsernameChangeAt: null,
+        fcmTokens: [],
     };
     // FIX: Use compat firestore API
     await db.collection("users").doc(userCredential.user.uid).set(newUser);
@@ -296,7 +402,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!userDoc.exists) {
         throw new Error("User data not found.");
     }
-    const userDataFromDb = userDoc.data();
+    const userDataFromDb = userDoc.data() as UserFromFirestore;
     // FIX: Explicitly create a plain object to prevent circular structure errors
     return { 
         id: userCredential.user.uid, 
@@ -305,7 +411,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         role: userDataFromDb.role,
         creator_id: userDataFromDb.creator_id,
         created_at: toISOStringSafe(userDataFromDb.created_at),
-        lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt)
+        lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
+        fcmTokens: userDataFromDb.fcmTokens || []
     };
   };
 
@@ -338,6 +445,26 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } else {
       // FIX: Use compat firestore API
       await db.collection("bookmarks").add({
+        user_id: currentUser.id,
+        template_id: templateId,
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  };
+
+  const getIsLiked = (templateId: string) => {
+    if (!currentUser) return false;
+    return likes.some(l => l.template_id === templateId);
+  };
+
+  const toggleLike = async (templateId: string) => {
+    if (!currentUser) return;
+    const existingLike = likes.find(l => l.template_id === templateId);
+
+    if (existingLike) {
+      await db.collection("likes").doc(existingLike.id).delete();
+    } else {
+      await db.collection("likes").add({
         user_id: currentUser.id,
         template_id: templateId,
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
@@ -440,6 +567,37 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           created_at: firebase.firestore.FieldValue.serverTimestamp()
       });
   };
+
+  const subscribeToNotifications = async () => {
+    if (!messaging || !currentUser) {
+        throw new Error('Notifications are not supported on this device.');
+    }
+    try {
+        const permission = await Notification.requestPermission();
+        setNotificationPermission(permission);
+
+        if (permission === 'granted') {
+            const token = await messaging.getToken({ vapidKey: 'BJEZnp2j8mN-73y-aO3sC0s_Y-aI8C4A7gZ_p_Q5F9X8fG4oY3wZJ9tZzCjJ3X1e9wZ6hH8xQ3C5yI' });
+            if (token) {
+                console.log('FCM Token:', token);
+                const userDocRef = db.collection('users').doc(currentUser.id);
+                await userDocRef.update({
+                    fcmTokens: firebase.firestore.FieldValue.arrayUnion(token)
+                });
+                alert('You are now subscribed to notifications!');
+            } else {
+                console.log('No registration token available. Request permission to generate one.');
+                throw new Error('Could not get notification token.');
+            }
+        } else {
+            console.log('Unable to get permission to notify.');
+            throw new Error('Notification permission was not granted.');
+        }
+    } catch (error) {
+        console.error('An error occurred while subscribing to notifications:', error);
+        throw error;
+    }
+  };
   
   // Admin functions
   const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
@@ -540,11 +698,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await db.collection("settings").doc("app").set(settings, { merge: true });
   }
   
+  const sendNotification = async (title: string, body: string) => {
+      if (!currentUser || currentUser.role !== Role.ADMIN) return;
+      await db.collection("notifications").add({
+          title,
+          body,
+          sent_at: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+  };
+  
   const value = {
-    users, templates, bookmarks, savedDesigns, downloads, categories, suggestions, appSettings, currentUser, loading,
+    users, templates, bookmarks, likes, savedDesigns, downloads, categories, suggestions, notifications, appSettings, currentUser, loading, notificationPermission,
     signup, login, startSession, logout,
-    getTemplateById, getIsBookmarked, toggleBookmark, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion,
-    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings
+    getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
+    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings, sendNotification,
+    installPromptEvent, triggerInstallPrompt
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

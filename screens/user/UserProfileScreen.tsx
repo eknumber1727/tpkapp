@@ -5,7 +5,7 @@ import { LogoutIcon } from '../../components/shared/Icons';
 import { SubmissionStatus, Template } from '../../types';
 
 const UserProfileScreen: React.FC = () => {
-  const { currentUser, logout, templates, getDownloadsForTemplate, updateUsername, submitSuggestion } = useData();
+  const { currentUser, logout, templates, getDownloadsForTemplate, updateUsername, submitSuggestion, installPromptEvent, triggerInstallPrompt, notificationPermission, subscribeToNotifications } = useData();
   const navigate = useNavigate();
 
   const [newUsername, setNewUsername] = useState(currentUser?.name || '');
@@ -13,6 +13,7 @@ const UserProfileScreen: React.FC = () => {
   const [usernameSuccess, setUsernameSuccess] = useState('');
   const [suggestion, setSuggestion] = useState('');
   const [suggestionSuccess, setSuggestionSuccess] = useState('');
+  const [notificationError, setNotificationError] = useState('');
 
   useEffect(() => {
     setNewUsername(currentUser?.name || '');
@@ -44,6 +45,15 @@ const UserProfileScreen: React.FC = () => {
       setSuggestionSuccess('Thank you for your feedback!');
       setTimeout(() => setSuggestionSuccess(''), 3000);
   }
+
+  const handleEnableNotifications = async () => {
+      setNotificationError('');
+      try {
+          await subscribeToNotifications();
+      } catch (err: any) {
+          setNotificationError(err.message);
+      }
+  };
 
   const { canChangeUsername, daysRemaining } = useMemo(() => {
     if (!currentUser?.lastUsernameChangeAt) return { canChangeUsername: true, daysRemaining: 0 };
@@ -83,7 +93,48 @@ const UserProfileScreen: React.FC = () => {
             Creator ID: <span className="font-semibold text-[#2C3E50]">{currentUser.creator_id}</span>
         </div>
       </div>
+
+      {/* Install App Button */}
+      {installPromptEvent && (
+          <div className="bg-white p-6 rounded-[30px] shadow-sm">
+              <h2 className="text-lg font-bold text-[#2C3E50] mb-3">Get the App</h2>
+              <p className="text-sm text-[#7F8C8D] mb-4">
+                  For a better experience, install the Timepass Katta app on your device. It's fast, works offline, and feels like a native app!
+              </p>
+              <button
+                  onClick={triggerInstallPrompt}
+                  className="w-full text-[#3D2811] font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-[#FFB800] to-[#FF7A00] hover:opacity-90 transition-opacity"
+              >
+                  Install App
+              </button>
+          </div>
+      )}
       
+       {/* Notifications */}
+       <div className="bg-white p-6 rounded-[30px] shadow-sm">
+            <h2 className="text-lg font-bold text-[#2C3E50] mb-3">Notifications</h2>
+            {notificationPermission === 'granted' ? (
+                <p className="text-sm text-green-600">You are subscribed to notifications.</p>
+            ) : notificationPermission === 'denied' ? (
+                <p className="text-sm text-red-600">
+                    Notifications are blocked. You'll need to enable them in your browser settings.
+                </p>
+            ) : (
+                <>
+                    <p className="text-sm text-[#7F8C8D] mb-4">
+                        Enable notifications to get updates on new templates and announcements.
+                    </p>
+                    <button
+                        onClick={handleEnableNotifications}
+                        className="w-full text-[#3D2811] font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-[#FFB800] to-[#FF7A00] hover:opacity-90 transition-opacity"
+                    >
+                        Enable Notifications
+                    </button>
+                    {notificationError && <p className="text-xs text-red-500 mt-2 text-center">{notificationError}</p>}
+                </>
+            )}
+        </div>
+
       {/* Account Management */}
       <div className="bg-white p-6 rounded-[30px] shadow-sm">
         <h2 className="text-lg font-bold text-[#2C3E50] mb-4">Account Management</h2>

@@ -5,6 +5,7 @@ import 'firebase/compat/auth';
 // FIX: Use compat libraries for firestore and storage to match the app initialization.
 import 'firebase/compat/firestore';
 import 'firebase/compat/storage';
+import 'firebase/compat/messaging';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -23,5 +24,7 @@ export const auth = firebase.auth();
 // FIX: Use compat syntax for getting Firestore and Storage instances.
 export const db = app.firestore();
 export const storage = app.storage();
+export const messaging = firebase.messaging.isSupported() ? firebase.messaging() : null;
+
 
 export default firebase;
