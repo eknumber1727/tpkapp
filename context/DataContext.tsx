@@ -19,6 +19,7 @@ import {
     serverTimestamp,
     query,
     where,
+    getDocs,
     writeBatch
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -39,6 +40,7 @@ interface DataContextType {
   loading: boolean;
 
   // Auth
+  signup: (name: string, email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<User>;
   startSession: (user: User) => void;
   logout: () => void;
@@ -164,6 +166,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
     }, [currentUser]);
 
+  const signup = async (name: string, email: string, password: string) => {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const newUser: Omit<User, 'id'> = {
+        name,
+        photo_url: `https://i.pravatar.cc/150?u=${userCredential.user.uid}`,
+        role: Role.USER,
+        creator_id: `TK${Date.now().toString().slice(-6)}`,
+        created_at: new Date().toISOString(),
+        lastUsernameChangeAt: null,
+    };
+    await setDoc(doc(db, "users", userCredential.user.uid), newUser);
+    // The onAuthStateChanged listener will automatically log the user in.
+  };
 
   const login = async (email: string, password: string): Promise<User> => {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -194,7 +209,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const toggleBookmark = async (templateId: string) => {
     if (!currentUser) return;
-    const bookmarkQuery = query(collection(db, "bookmarks"), where("user_id", "==", currentUser.id), where("template_id", "==", templateId));
     const existingBookmark = bookmarks.find(b => b.template_id === templateId);
 
     if (existingBookmark) {
@@ -213,14 +227,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const saveDesign = async (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => {
     if (!currentUser) return;
     
+    const dataToSave = {
+        ...designData,
+        user_id: currentUser.id,
+        updated_at: serverTimestamp(),
+    };
+    delete (dataToSave as any).id; // Don't save the id field in the document
+
     if (designData.id) {
-        await updateDoc(doc(db, "savedDesigns", designData.id), { ...designData, updated_at: serverTimestamp() });
+        await setDoc(doc(db, "savedDesigns", designData.id), dataToSave);
     } else {
-        await addDoc(collection(db, "savedDesigns"), {
-            ...designData,
-            user_id: currentUser.id,
-            updated_at: serverTimestamp(),
-        });
+        await addDoc(collection(db, "savedDesigns"), dataToSave);
     }
   };
   
@@ -236,13 +253,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File}) => {
     if(!currentUser || currentUser.role !== Role.USER) return;
     
-    const templateId = uuidv4();
+    const templateDocRef = doc(collection(db, 'templates'));
+    const templateId = templateDocRef.id;
+
     const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
     const bg_preview_url = await uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`);
     
-    // For now, client generates composite. In production, a cloud function would do this.
-    // We will just use the bg_preview_url as a placeholder for composite.
-    const composite_preview_url = bg_preview_url;
+    const composite_preview_url = bg_preview_url; // Placeholder
 
     const newSubmission = {
         ...submissionData,
@@ -255,7 +272,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         is_active: false,
         created_at: serverTimestamp(),
     };
-    await addDoc(collection(db, "templates"), newSubmission);
+    await setDoc(templateDocRef, newSubmission);
   };
 
   const getDownloadsForTemplate = (templateId: string) => {
@@ -292,7 +309,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Admin functions
   const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
-      const templateId = uuidv4();
+      const templateDocRef = doc(collection(db, 'templates'));
+      const templateId = templateDocRef.id;
+
       const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
       const bg_preview_url = await uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`);
       const composite_preview_url = bg_preview_url; // Placeholder
@@ -308,7 +327,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           is_active: true,
           created_at: serverTimestamp(),
       };
-      await addDoc(collection(db, "templates"), newTemplate);
+      await setDoc(templateDocRef, newTemplate);
   };
 
   const updateTemplate = async (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File}) => {
@@ -328,7 +347,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
-    // Also delete associated storage files
     const template = templates.find(t => t.id === templateId);
     if(template){
         try { await deleteObject(ref(storage, `templates/${templateId}/overlay.png`)); } catch(e) { console.error(e); }
@@ -359,7 +377,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!categoryToDelete) return;
     
     const q = query(collection(db, "templates"), where("category", "==", categoryToDelete.name));
-    const querySnapshot = await getDoc(q);
+    const querySnapshot = await getDocs(q);
     if (!querySnapshot.empty) {
         throw new Error('This category is currently in use by one or more templates and cannot be deleted.');
     }
@@ -374,7 +392,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const value = {
     users, templates, bookmarks, savedDesigns, downloads, categories, suggestions, appSettings, currentUser, loading,
-    login, startSession, logout,
+    signup, login, startSession, logout,
     getTemplateById, getIsBookmarked, toggleBookmark, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion,
     adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings
   };
