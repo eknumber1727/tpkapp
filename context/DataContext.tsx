@@ -1,28 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Template, Bookmark, SavedDesign, Download, Role, SubmissionStatus, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore } from '../types';
-import { auth, db, storage } from '../firebase';
-import { 
-    createUserWithEmailAndPassword, 
-    signInWithEmailAndPassword, 
-    signOut, 
-    onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-    collection, 
-    onSnapshot, 
-    doc, 
-    getDoc,
-    setDoc,
-    addDoc,
-    updateDoc,
-    deleteDoc,
-    serverTimestamp,
-    query,
-    where,
-    getDocs,
-    Timestamp
-} from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+// FIX: Import firebase default for compat types, and named exports for service instances.
+import firebase, { auth, db, storage } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -71,9 +50,10 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+    // FIX: Use compat storage API
+    const storageRef = storage.ref(path);
+    await storageRef.put(file);
+    return await storageRef.getDownloadURL();
 };
 
 
@@ -91,7 +71,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Safely convert Firestore Timestamp to ISO string
   const toISOStringSafe = (timestamp: any): string => {
-      if (timestamp instanceof Timestamp) {
+      // FIX: Use compat Timestamp type for instanceof check
+      if (timestamp instanceof firebase.firestore.Timestamp) {
           return timestamp.toDate().toISOString();
       }
       // Fallback for serverTimestamp pending writes
@@ -101,18 +82,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return timestamp;
   }
   const toISOStringSafeOrNull = (timestamp: any): string | null => {
-      if (timestamp instanceof Timestamp) {
+      // FIX: Use compat Timestamp type for instanceof check
+      if (timestamp instanceof firebase.firestore.Timestamp) {
           return timestamp.toDate().toISOString();
       }
       return null;
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    // FIX: Use compat library syntax for onAuthStateChanged
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
         if (user) {
-            const userDocRef = doc(db, "users", user.uid);
-            const userDoc = await getDoc(userDocRef);
-            if(userDoc.exists()){
+            // FIX: Use compat firestore API
+            const userDocRef = db.collection("users").doc(user.uid);
+            const userDoc = await userDocRef.get();
+            if(userDoc.exists){
                 const userDataFromDb = userDoc.data();
                 // FIX: Explicitly create a plain object to prevent circular structure errors
                 const plainUserObject: User = { 
@@ -137,7 +121,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
   
   useEffect(() => {
-    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+    // FIX: Use compat firestore API
+    const unsubUsers = db.collection("users").onSnapshot((snapshot) => {
         setUsers(snapshot.docs.map(doc => {
             const data = doc.data();
             // FIX: Explicitly create a plain object to prevent circular structure errors
@@ -153,7 +138,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
     }, (error) => console.error("Error fetching users:", error));
 
-    const unsubTemplates = onSnapshot(collection(db, "templates"), (snapshot) => {
+    const unsubTemplates = db.collection("templates").onSnapshot((snapshot) => {
         setTemplates(snapshot.docs.map(doc => {
             const data = doc.data();
             // FIX: Explicitly create a plain object
@@ -177,7 +162,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
     }, (error) => console.error("Error fetching templates:", error));
 
-    const unsubCategories = onSnapshot(collection(db, "categories"), (snapshot) => {
+    const unsubCategories = db.collection("categories").onSnapshot((snapshot) => {
         setCategories(snapshot.docs.map(doc => {
             const data = doc.data();
             // FIX: Explicitly create a plain object
@@ -188,7 +173,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
     }, (error) => console.error("Error fetching categories:", error));
 
-    const unsubSuggestions = onSnapshot(collection(db, "suggestions"), (snapshot) => {
+    const unsubSuggestions = db.collection("suggestions").onSnapshot((snapshot) => {
         setSuggestions(snapshot.docs.map(doc => {
             const data = doc.data();
             // FIX: Explicitly create a plain object
@@ -202,8 +187,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
     }, (error) => console.error("Error fetching suggestions:", error));
 
-    const unsubAppSettings = onSnapshot(doc(db, "settings", "app"), (doc) => {
-        if (doc.exists()) {
+    const unsubAppSettings = db.collection("settings").doc("app").onSnapshot((doc) => {
+        if (doc.exists) {
             const data = doc.data();
             // FIX: Explicitly create a plain object
             setAppSettings({
@@ -230,9 +215,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setDownloads([]);
             return;
         }
-
-        const qBookmarks = query(collection(db, "bookmarks"), where("user_id", "==", currentUser.id));
-        const unsubBookmarks = onSnapshot(qBookmarks, (snapshot) => {
+        
+        // FIX: Use compat firestore API
+        const qBookmarks = db.collection("bookmarks").where("user_id", "==", currentUser.id);
+        const unsubBookmarks = qBookmarks.onSnapshot((snapshot) => {
             setBookmarks(snapshot.docs.map(doc => {
                 const data = doc.data();
                 // FIX: Explicitly create a plain object
@@ -245,8 +231,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }));
         });
 
-        const qDesigns = query(collection(db, "savedDesigns"), where("user_id", "==", currentUser.id));
-        const unsubDesigns = onSnapshot(qDesigns, (snapshot) => {
+        const qDesigns = db.collection("savedDesigns").where("user_id", "==", currentUser.id);
+        const unsubDesigns = qDesigns.onSnapshot((snapshot) => {
             setSavedDesigns(snapshot.docs.map(doc => {
                 const data = doc.data();
                 // FIX: Explicitly create a plain object
@@ -261,8 +247,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }));
         });
         
-        const qDownloads = query(collection(db, "downloads"), where("user_id", "==", currentUser.id));
-        const unsubDownloads = onSnapshot(qDownloads, (snapshot) => {
+        const qDownloads = db.collection("downloads").where("user_id", "==", currentUser.id);
+        const unsubDownloads = qDownloads.onSnapshot((snapshot) => {
             setDownloads(snapshot.docs.map(doc => {
                 const data = doc.data();
                 // FIX: Explicitly create a plain object
@@ -287,22 +273,27 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [currentUser]);
 
   const signup = async (name: string, email: string, password: string) => {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    // FIX: Use compat library syntax for createUserWithEmailAndPassword
+    const userCredential = await auth.createUserWithEmailAndPassword(email, password);
     const newUser = {
         name,
         photo_url: `https://i.pravatar.cc/150?u=${userCredential.user.uid}`,
         role: Role.USER,
         creator_id: `TK${Date.now().toString().slice(-6)}`,
-        created_at: serverTimestamp(),
+        // FIX: Use compat firestore API for serverTimestamp
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
         lastUsernameChangeAt: null,
     };
-    await setDoc(doc(db, "users", userCredential.user.uid), newUser);
+    // FIX: Use compat firestore API
+    await db.collection("users").doc(userCredential.user.uid).set(newUser);
   };
 
   const login = async (email: string, password: string): Promise<User> => {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
-    if (!userDoc.exists()) {
+    // FIX: Use compat library syntax for signInWithEmailAndPassword
+    const userCredential = await auth.signInWithEmailAndPassword(email, password);
+    // FIX: Use compat firestore API
+    const userDoc = await db.collection("users").doc(userCredential.user.uid).get();
+    if (!userDoc.exists) {
         throw new Error("User data not found.");
     }
     const userDataFromDb = userDoc.data();
@@ -324,7 +315,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
-    await signOut(auth);
+    // FIX: Use compat library syntax for signOut
+    await auth.signOut();
     setCurrentUser(null);
     localStorage.removeItem('timepass-katta-user');
   };
@@ -341,12 +333,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const existingBookmark = bookmarks.find(b => b.template_id === templateId);
 
     if (existingBookmark) {
-      await deleteDoc(doc(db, "bookmarks", existingBookmark.id));
+      // FIX: Use compat firestore API
+      await db.collection("bookmarks").doc(existingBookmark.id).delete();
     } else {
-      await addDoc(collection(db, "bookmarks"), {
+      // FIX: Use compat firestore API
+      await db.collection("bookmarks").add({
         user_id: currentUser.id,
         template_id: templateId,
-        created_at: serverTimestamp(),
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
       });
     }
   };
@@ -359,38 +353,42 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // CRITICAL BUG FIX: Separate logic for create (addDoc) and update (setDoc)
     if (designData.id) {
         // This is an UPDATE
-        const docRef = doc(db, "savedDesigns", designData.id);
+        // FIX: Use compat firestore API
+        const docRef = db.collection("savedDesigns").doc(designData.id);
         const dataToSave = {
             ...designData,
             user_id: currentUser.id,
-            updated_at: serverTimestamp(),
+            updated_at: firebase.firestore.FieldValue.serverTimestamp(),
         };
-        await setDoc(docRef, dataToSave, { merge: true });
+        await docRef.set(dataToSave, { merge: true });
     } else {
         // This is a CREATE - remove the undefined 'id' field
         const { id, ...restOfData } = designData; 
         const dataToSave = {
             ...restOfData,
             user_id: currentUser.id,
-            updated_at: serverTimestamp(),
+            updated_at: firebase.firestore.FieldValue.serverTimestamp(),
         };
-        await addDoc(collection(db, "savedDesigns"), dataToSave);
+        // FIX: Use compat firestore API
+        await db.collection("savedDesigns").add(dataToSave);
     }
   };
   
   const addDownload = async (downloadData: Omit<Download, 'id'|'user_id'|'timestamp'>) => {
       if(!currentUser) return;
-      await addDoc(collection(db, "downloads"), {
+      // FIX: Use compat firestore API
+      await db.collection("downloads").add({
           ...downloadData,
           user_id: currentUser.id,
-          timestamp: serverTimestamp(),
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
       });
   };
   
   const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
     if(!currentUser || currentUser.role !== Role.USER) return;
     
-    const templateDocRef = doc(collection(db, 'templates'));
+    // FIX: Use compat firestore API
+    const templateDocRef = db.collection('templates').doc();
     const templateId = templateDocRef.id;
 
     const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
@@ -406,9 +404,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         uploader_username: currentUser.name,
         status: SubmissionStatus.PENDING,
         is_active: false,
-        created_at: serverTimestamp(),
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
     };
-    await setDoc(templateDocRef, newSubmission);
+    await templateDocRef.set(newSubmission);
   };
 
   const getDownloadsForTemplate = (templateId: string) => {
@@ -427,24 +425,27 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
       }
       
-      const userDocRef = doc(db, "users", currentUser.id);
-      await updateDoc(userDocRef, { name: newUsername, lastUsernameChangeAt: serverTimestamp() });
+      // FIX: Use compat firestore API
+      const userDocRef = db.collection("users").doc(currentUser.id);
+      await userDocRef.update({ name: newUsername, lastUsernameChangeAt: firebase.firestore.FieldValue.serverTimestamp() });
   }
 
   const submitSuggestion = async (text: string) => {
       if (!currentUser || !text.trim()) return;
-      await addDoc(collection(db, "suggestions"), {
+      // FIX: Use compat firestore API
+      await db.collection("suggestions").add({
           user_id: currentUser.id,
           user_name: currentUser.name,
           text: text.trim(),
-          created_at: serverTimestamp()
+          created_at: firebase.firestore.FieldValue.serverTimestamp()
       });
   };
   
   // Admin functions
   const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
-      const templateDocRef = doc(collection(db, 'templates'));
+      // FIX: Use compat firestore API
+      const templateDocRef = db.collection('templates').doc();
       const templateId = templateDocRef.id;
 
       const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
@@ -461,9 +462,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           uploader_username: currentUser.name,
           status: SubmissionStatus.APPROVED,
           is_active: true,
-          created_at: serverTimestamp(),
+          created_at: firebase.firestore.FieldValue.serverTimestamp(),
       };
-      await setDoc(templateDocRef, newTemplate);
+      await templateDocRef.set(newTemplate);
   };
 
   const updateTemplate = async (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File, compositeFile?: Blob}) => {
@@ -481,33 +482,39 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           updateData.composite_preview_url = await uploadFile(newFiles.compositeFile, `templates/${templateId}/composite_preview.jpg`);
       }
       
-      await updateDoc(doc(db, "templates", templateId), updateData);
+      // FIX: Use compat firestore API
+      await db.collection("templates").doc(templateId).update(updateData);
   };
 
   const deleteTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
     const template = templates.find(t => t.id === templateId);
     if(template){
-        try { await deleteObject(ref(storage, `templates/${templateId}/overlay.png`)); } catch(e) { console.error(e); }
-        try { await deleteObject(ref(storage, `templates/${templateId}/bg_preview.jpg`)); } catch(e) { console.error(e); }
-        try { await deleteObject(ref(storage, `templates/${templateId}/composite_preview.jpg`)); } catch(e) { console.error(e); }
+        // FIX: Use compat storage API
+        try { await storage.ref(`templates/${templateId}/overlay.png`).delete(); } catch(e) { console.error(e); }
+        try { await storage.ref(`templates/${templateId}/bg_preview.jpg`).delete(); } catch(e) { console.error(e); }
+        try { await storage.ref(`templates/${templateId}/composite_preview.jpg`).delete(); } catch(e) { console.error(e); }
     }
-    await deleteDoc(doc(db, "templates", templateId));
+    // FIX: Use compat firestore API
+    await db.collection("templates").doc(templateId).delete();
   };
 
   const approveTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
-    await updateDoc(doc(db, "templates", templateId), { status: SubmissionStatus.APPROVED, is_active: true });
+    // FIX: Use compat firestore API
+    await db.collection("templates").doc(templateId).update({ status: SubmissionStatus.APPROVED, is_active: true });
   };
 
   const rejectTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
-    await updateDoc(doc(db, "templates", templateId), { status: SubmissionStatus.REJECTED, is_active: false });
+    // FIX: Use compat firestore API
+    await db.collection("templates").doc(templateId).update({ status: SubmissionStatus.REJECTED, is_active: false });
   };
   
   const addCategory = async (name: CategoryName) => {
     if (!currentUser || currentUser.role !== Role.ADMIN || !name.trim()) return;
-    await addDoc(collection(db, "categories"), { name: name.trim() });
+    // FIX: Use compat firestore API
+    await db.collection("categories").add({ name: name.trim() });
   };
 
   const deleteCategory = async (categoryId: string) => {
@@ -516,18 +523,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const categoryToDelete = categories.find(c => c.id === categoryId);
     if (!categoryToDelete) return;
     
-    const q = query(collection(db, "templates"), where("category", "==", categoryToDelete.name));
-    const querySnapshot = await getDocs(q);
+    // FIX: Use compat firestore API
+    const q = db.collection("templates").where("category", "==", categoryToDelete.name);
+    const querySnapshot = await q.get();
     if (!querySnapshot.empty) {
         throw new Error('This category is currently in use by one or more templates and cannot be deleted.');
     }
 
-    await deleteDoc(doc(db, "categories", categoryId));
+    // FIX: Use compat firestore API
+    await db.collection("categories").doc(categoryId).delete();
   };
   
   const updateAppSettings = async (settings: Partial<AppSettings>) => {
       if (!currentUser || currentUser.role !== Role.ADMIN) return;
-      await setDoc(doc(db, "settings", "app"), settings, { merge: true });
+      // FIX: Use compat firestore API
+      await db.collection("settings").doc("app").set(settings, { merge: true });
   }
   
   const value = {

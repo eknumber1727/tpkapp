@@ -1,8 +1,10 @@
 // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+// FIX: Use compat libraries for app and auth to resolve import errors, likely due to a Firebase version mismatch.
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/auth';
+// FIX: Use compat libraries for firestore and storage to match the app initialization.
+import 'firebase/compat/firestore';
+import 'firebase/compat/storage';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -16,7 +18,10 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+const app = firebase.initializeApp(firebaseConfig);
+export const auth = firebase.auth();
+// FIX: Use compat syntax for getting Firestore and Storage instances.
+export const db = app.firestore();
+export const storage = app.storage();
+
+export default firebase;
