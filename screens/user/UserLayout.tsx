@@ -14,10 +14,13 @@ const UserLayout: React.FC<UserLayoutProps> = ({ children }) => {
   return (
     <div className="bg-[#F8F9FA] min-h-screen font-sans">
       <header className="sticky top-0 z-40 bg-white px-4 shadow-sm h-16 flex items-center justify-between">
-        <button onClick={() => setIsMenuOpen(true)} className="p-2">
+        <button onClick={() => setIsMenuOpen(true)} className="p-2 -ml-2">
             <MenuIcon className="w-6 h-6 text-[#2C3E50]" />
         </button>
-        <h1 className="text-xl font-extrabold text-[#2C3E50] text-center tracking-wider">{APP_NAME}</h1>
+        <h1 className="text-xl font-extrabold text-[#2C3E50] text-center tracking-wider truncate">
+            <span className="md:hidden">Timepass Katta</span>
+            <span className="hidden md:inline">{APP_NAME}</span>
+        </h1>
         <div className="w-8"></div> {/* Spacer to balance the header */}
       </header>
       <main className="pb-24">

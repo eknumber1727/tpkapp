@@ -23,12 +23,9 @@ interface DataContextType {
   notificationPermission: NotificationPermission;
 
   // Auth
-  signup: (name: string, email: string, password: string) => Promise<void>;
-  login: (email: string, password: string) => Promise<User>;
   loginWithGoogle: () => Promise<User | void>;
   startSession: (user: User) => void;
   logout: () => void;
-  resendVerificationEmail: () => Promise<void>;
 
   // User Actions
   getTemplateById: (templateId: string) => Template | undefined;
@@ -161,7 +158,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     id: user.uid, 
                     name: userDataFromDb.name,
                     email: userDataFromDb.email,
-                    emailVerified: user.emailVerified,
+                    // FIX: Add missing emailVerified property.
+                    emailVerified: userDataFromDb.emailVerified,
                     photo_url: userDataFromDb.photo_url,
                     role: userDataFromDb.role,
                     creator_id: userDataFromDb.creator_id,
@@ -191,7 +189,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 id: doc.id,
                 name: data.name,
                 email: data.email,
-                emailVerified: data.emailVerified,
                 photo_url: data.photo_url,
                 role: data.role,
                 creator_id: data.creator_id,
@@ -399,48 +396,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
     }, [currentUser]);
 
-  const signup = async (name: string, email: string, password: string) => {
-    const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-    // FIX: Send verification email on signup.
-    await userCredential.user.sendEmailVerification();
-    const newUser = {
-        name,
-        email,
-        emailVerified: false, // User must verify their email
-        photo_url: `https://i.pravatar.cc/150?u=${userCredential.user.uid}`,
-        role: Role.USER,
-        creator_id: `TK${Date.now().toString().slice(-6)}`,
-        created_at: firebase.firestore.FieldValue.serverTimestamp(),
-        lastUsernameChangeAt: null,
-        fcmTokens: [],
-    };
-    await db.collection("users").doc(userCredential.user.uid).set(newUser);
-  };
-
-  const login = async (email: string, password: string): Promise<User> => {
-    // FIX: Use compat library syntax for signInWithEmailAndPassword
-    const userCredential = await auth.signInWithEmailAndPassword(email, password);
-    // FIX: Use compat firestore API
-    const userDoc = await db.collection("users").doc(userCredential.user.uid).get();
-    if (!userDoc.exists) {
-        throw new Error("User data not found.");
-    }
-    const userDataFromDb = userDoc.data() as UserFromFirestore;
-    // FIX: Explicitly create a plain object to prevent circular structure errors
-    return { 
-        id: userCredential.user.uid, 
-        name: userDataFromDb.name,
-        email: userDataFromDb.email,
-        emailVerified: userCredential.user.emailVerified,
-        photo_url: userDataFromDb.photo_url,
-        role: userDataFromDb.role,
-        creator_id: userDataFromDb.creator_id,
-        created_at: toISOStringSafe(userDataFromDb.created_at),
-        lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
-        fcmTokens: userDataFromDb.fcmTokens || []
-    };
-  };
-
   const loginWithGoogle = async (): Promise<User | void> => {
     const provider = new firebase.auth.GoogleAuthProvider();
     const result = await auth.signInWithPopup(provider);
@@ -459,6 +414,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const newUserFromGoogle = {
             name: user.displayName || 'New User',
             email: user.email || '',
+            // FIX: Add missing emailVerified property.
             emailVerified: user.emailVerified,
             photo_url: user.photoURL || `https://i.pravatar.cc/150?u=${user.uid}`,
             role: Role.USER,
@@ -472,7 +428,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             id: user.uid,
             name: newUserFromGoogle.name,
             email: newUserFromGoogle.email,
-            emailVerified: newUserFromGoogle.emailVerified,
+            // FIX: Add missing emailVerified property.
+            emailVerified: user.emailVerified,
             photo_url: newUserFromGoogle.photo_url,
             role: newUserFromGoogle.role,
             creator_id: newUserFromGoogle.creator_id,
@@ -482,15 +439,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
     } else { // Existing user
         const userDataFromDb = userDoc.data() as UserFromFirestore;
-        // Ensure the emailVerified status is updated from Google
-        if (user.emailVerified && !userDataFromDb.emailVerified) {
-            await userDocRef.update({ emailVerified: true });
-        }
         appUser = {
             id: user.uid,
             name: userDataFromDb.name,
             email: userDataFromDb.email,
-            emailVerified: user.emailVerified,
+            // FIX: Add missing emailVerified property.
+            emailVerified: userDataFromDb.emailVerified,
             photo_url: userDataFromDb.photo_url,
             role: userDataFromDb.role,
             creator_id: userDataFromDb.creator_id,
@@ -513,13 +467,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await auth.signOut();
     setCurrentUser(null);
     localStorage.removeItem('timepass-katta-user');
-  };
-
-  const resendVerificationEmail = async () => {
-    if (!auth.currentUser) {
-      throw new Error("No user is currently logged in.");
-    }
-    await auth.currentUser.sendEmailVerification();
   };
 
   const getTemplateById = (templateId: string) => templates.find(t => t.id === templateId);
@@ -810,7 +757,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const value = {
     users, templates, bookmarks, likes, savedDesigns, downloads, categories, suggestions, notifications, appSettings, currentUser, loading, notificationPermission,
-    signup, login, loginWithGoogle, startSession, logout, resendVerificationEmail,
+    loginWithGoogle, startSession, logout,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
     adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings, uploadAdminFile, sendNotification,
     installPromptEvent, triggerInstallPrompt

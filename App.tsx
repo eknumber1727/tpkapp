@@ -24,11 +24,9 @@ import AdminLayout from './screens/admin/AdminLayout';
 import AdminEditTemplateScreen from './screens/admin/AdminEditTemplateScreen';
 import { Role } from './types';
 import AdminCategoryManagerScreen from './screens/admin/AdminCategoryManagerScreen';
-import AdminAppSettingsManagerScreen from './screens/admin/AppSettingsManagerScreen';
+import AdminAppSettingsManagerScreen from './screens/admin/AdminAppSettingsManagerScreen';
 import AdminSuggestionsScreen from './screens/admin/AdminSuggestionsScreen';
 import AdminNotificationsManagerScreen from './screens/admin/AdminNotificationsManagerScreen';
-// FIX: Import VerifyEmailScreen to handle unverified users.
-import VerifyEmailScreen from './screens/VerifyEmailScreen';
 
 const UserRoutes = () => (
   <UserLayout>
@@ -110,16 +108,6 @@ const App: React.FC = () => {
       );
     }
 
-    // FIX: Add check for email verification.
-    if (!currentUser.emailVerified) {
-      return (
-        <Routes>
-          <Route path="/verify-email" element={<VerifyEmailScreen />} />
-          <Route path="*" element={<Navigate to="/verify-email" replace />} />
-        </Routes>
-      );
-    }
-    
     if (currentUser.role === Role.ADMIN) {
         return <AdminRoutes />;
     }
