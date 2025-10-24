@@ -24,7 +24,6 @@ import AdminLayout from './screens/admin/AdminLayout';
 import AdminEditTemplateScreen from './screens/admin/AdminEditTemplateScreen';
 import { Role } from './types';
 import AdminCategoryManagerScreen from './screens/admin/AdminCategoryManagerScreen';
-import AdminAppSettingsManagerScreen from './screens/admin/AdminAppSettingsManagerScreen';
 import AdminSuggestionsScreen from './screens/admin/AdminSuggestionsScreen';
 import AdminNotificationsManagerScreen from './screens/admin/AdminNotificationsManagerScreen';
 
@@ -57,7 +56,6 @@ const AdminRoutes = () => (
       <Route path="/submissions" element={<AdminSubmissionsManagerScreen />} />
       <Route path="/categories" element={<AdminCategoryManagerScreen />} />
       <Route path="/suggestions" element={<AdminSuggestionsScreen />} />
-      <Route path="/settings" element={<AdminAppSettingsManagerScreen />} />
       <Route path="/notifications" element={<AdminNotificationsManagerScreen />} />
       <Route path="/create-template" element={<UserCreateTemplateScreen />} />
       <Route path="/templates/:templateId/edit" element={<AdminEditTemplateScreen />} />

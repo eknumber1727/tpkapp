@@ -36,10 +36,6 @@ const NavLinks: React.FC<{ onLinkClick?: () => void }> = ({ onLinkClick }) => {
                 <BellIcon className="w-6 h-6" />
                 <span>Notifications</span>
             </NavLink>
-            <NavLink to="/settings" className={getLinkClass} onClick={onLinkClick}>
-                <SettingsIcon className="w-6 h-6" />
-                <span>App Settings</span>
-            </NavLink>
         </>
     );
 };

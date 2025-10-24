@@ -23,7 +23,8 @@ interface DataContextType {
   notificationPermission: NotificationPermission;
 
   // Auth
-  loginWithGoogle: () => Promise<User | void>;
+  login: (email: string, pass: string) => Promise<User | void>;
+  signup: (name: string, email: string, pass: string) => Promise<User | void>;
   startSession: (user: User) => void;
   logout: () => void;
 
@@ -158,7 +159,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     id: user.uid, 
                     name: userDataFromDb.name,
                     email: userDataFromDb.email,
-                    // FIX: Add missing emailVerified property.
                     emailVerified: userDataFromDb.emailVerified,
                     photo_url: userDataFromDb.photo_url,
                     role: userDataFromDb.role,
@@ -396,66 +396,69 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
     }, [currentUser]);
 
-  const loginWithGoogle = async (): Promise<User | void> => {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    const result = await auth.signInWithPopup(provider);
-    const user = result.user;
+  const signup = async (name: string, email: string, pass: string): Promise<User | void> => {
+    const userCredential = await auth.createUserWithEmailAndPassword(email, pass);
+    const user = userCredential.user;
     if (!user) {
-        throw new Error("Google Sign-In failed.");
+        throw new Error("Could not create user account.");
     }
 
-    const userDocRef = db.collection("users").doc(user.uid);
-    const userDoc = await userDocRef.get();
-
-    let appUser: User;
-
-    if (!userDoc.exists) { // New user via Google
-        const creator_id = `TK${Date.now().toString().slice(-6)}`;
-        const newUserFromGoogle = {
-            name: user.displayName || 'New User',
-            email: user.email || '',
-            // FIX: Add missing emailVerified property.
-            emailVerified: user.emailVerified,
-            photo_url: user.photoURL || `https://i.pravatar.cc/150?u=${user.uid}`,
-            role: Role.USER,
-            creator_id,
-            created_at: firebase.firestore.FieldValue.serverTimestamp(),
-            lastUsernameChangeAt: null,
-            fcmTokens: [],
-        };
-        await userDocRef.set(newUserFromGoogle);
-        appUser = {
-            id: user.uid,
-            name: newUserFromGoogle.name,
-            email: newUserFromGoogle.email,
-            // FIX: Add missing emailVerified property.
-            emailVerified: user.emailVerified,
-            photo_url: newUserFromGoogle.photo_url,
-            role: newUserFromGoogle.role,
-            creator_id: newUserFromGoogle.creator_id,
-            created_at: new Date().toISOString(), // Use current time for immediate session start
-            lastUsernameChangeAt: null,
-            fcmTokens: [],
-        };
-    } else { // Existing user
-        const userDataFromDb = userDoc.data() as UserFromFirestore;
-        appUser = {
-            id: user.uid,
-            name: userDataFromDb.name,
-            email: userDataFromDb.email,
-            // FIX: Add missing emailVerified property.
-            emailVerified: userDataFromDb.emailVerified,
-            photo_url: userDataFromDb.photo_url,
-            role: userDataFromDb.role,
-            creator_id: userDataFromDb.creator_id,
-            created_at: toISOStringSafe(userDataFromDb.created_at),
-            lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
-            fcmTokens: userDataFromDb.fcmTokens || [],
-        };
-    }
+    const creator_id = `TK${Date.now().toString().slice(-6)}`;
+    const newUser = {
+      name,
+      email,
+      emailVerified: true, // No verification needed
+      photo_url: `https://i.pravatar.cc/150?u=${user.uid}`,
+      role: Role.USER,
+      creator_id,
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      lastUsernameChangeAt: null,
+      fcmTokens: [],
+    };
+    await db.collection("users").doc(user.uid).set(newUser);
+    const appUser: User = {
+      id: user.uid,
+      name: newUser.name,
+      email: newUser.email,
+      emailVerified: newUser.emailVerified,
+      photo_url: newUser.photo_url,
+      role: newUser.role,
+      creator_id: newUser.creator_id,
+      created_at: new Date().toISOString(),
+      lastUsernameChangeAt: null,
+      fcmTokens: [],
+    };
     startSession(appUser);
     return appUser;
   };
+  
+  const login = async (email: string, pass: string): Promise<User | void> => {
+    const userCredential = await auth.signInWithEmailAndPassword(email, pass);
+    const user = userCredential.user;
+    if (!user) {
+      throw new Error("Login failed.");
+    }
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    if (!userDoc.exists) {
+        throw new Error("User data not found in database.");
+    }
+
+    const userDataFromDb = userDoc.data() as UserFromFirestore;
+    const appUser: User = {
+      id: user.uid,
+      name: userDataFromDb.name,
+      email: userDataFromDb.email,
+      emailVerified: userDataFromDb.emailVerified,
+      photo_url: userDataFromDb.photo_url,
+      role: userDataFromDb.role,
+      creator_id: userDataFromDb.creator_id,
+      created_at: toISOStringSafe(userDataFromDb.created_at),
+      lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
+      fcmTokens: userDataFromDb.fcmTokens || [],
+    };
+    startSession(appUser);
+    return appUser;
+  }
 
   const startSession = (user: User) => {
     setCurrentUser(user);
@@ -757,7 +760,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const value = {
     users, templates, bookmarks, likes, savedDesigns, downloads, categories, suggestions, notifications, appSettings, currentUser, loading, notificationPermission,
-    loginWithGoogle, startSession, logout,
+    login, signup, startSession, logout,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
     adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings, uploadAdminFile, sendNotification,
     installPromptEvent, triggerInstallPrompt

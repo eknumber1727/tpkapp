@@ -2,25 +2,33 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { APP_NAME } from '../constants';
-import { GoogleIcon } from '../components/shared/Icons';
 
 const LoginScreen: React.FC = () => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [googleLoading, setGoogleLoading] = useState(false);
-
+  const [loading, setLoading] = useState(false);
+  
   const navigate = useNavigate();
-  const { loginWithGoogle } = useData();
+  const { login, signup } = useData();
 
-  const handleGoogleLogin = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError('');
-    setGoogleLoading(true);
+    setLoading(true);
     try {
-      await loginWithGoogle();
+      if (isLogin) {
+        await login(email, password);
+      } else {
+        await signup(name, email, password);
+      }
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in with Google.');
+      setError(err.message || 'An error occurred.');
     } finally {
-      setGoogleLoading(false);
+      setLoading(false);
     }
   };
 
@@ -31,22 +39,79 @@ const LoginScreen: React.FC = () => {
           {APP_NAME}
         </h1>
         <p className="text-center text-[#7F8C8D] mt-2 mb-8">
-            Sign in to continue
+            {isLogin ? 'Login to continue' : 'Create a new account'}
         </p>
 
-        <div className="space-y-4">
-            <button
-              onClick={handleGoogleLogin}
-              disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50"
-            >
-              <GoogleIcon className="w-5 h-5" />
-              <span className="font-semibold text-[#2C3E50]">
-                {googleLoading ? 'Signing in...' : 'Continue with Google'}
-              </span>
-            </button>
-            {error && <p className="text-red-500 text-xs mt-4 text-center">{error}</p>}
-        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!isLogin && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700" htmlFor="name">
+                Full Name
+              </label>
+              <input
+                id="name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter your name"
+                required
+                className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
+              />
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700" htmlFor="email">
+              Email Address
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="e.g., user@example.com"
+              required
+              className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700" htmlFor="password">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+              required
+              minLength={6}
+              className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full text-[#3D2811] font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-[#FFB800] to-[#FF7A00] disabled:opacity-50"
+          >
+            {loading ? 'Processing...' : (isLogin ? 'Login' : 'Sign Up')}
+          </button>
+
+          {error && <p className="text-red-500 text-xs mt-4 text-center">{error}</p>}
+        </form>
+
+        <p className="text-center text-sm text-[#7F8C8D] mt-6">
+          {isLogin ? "Don't have an account?" : "Already have an account?"}
+          <button
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError('');
+            }}
+            className="font-semibold text-[#FF7A00] hover:underline ml-1"
+          >
+            {isLogin ? 'Sign Up' : 'Login'}
+          </button>
+        </p>
       </div>
     </div>
   );
