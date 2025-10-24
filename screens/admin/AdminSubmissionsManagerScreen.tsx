@@ -4,11 +4,12 @@ import { SubmissionStatus } from '../../types';
 import ImagePreviewModal from '../../components/shared/ImagePreviewModal';
 
 const AdminSubmissionsManagerScreen: React.FC = () => {
-    const { templates, approveTemplate, rejectTemplate } = useData();
+    const { adminTemplates, approveTemplate, rejectTemplate } = useData();
     
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
-    const pendingSubmissions = templates.filter(t => t.status === SubmissionStatus.PENDING);
+    // FIX: Use adminTemplates to get all submissions
+    const pendingSubmissions = adminTemplates.filter(t => t.status === SubmissionStatus.PENDING);
     
     const getStatusColor = (status: SubmissionStatus) => {
         switch (status) {

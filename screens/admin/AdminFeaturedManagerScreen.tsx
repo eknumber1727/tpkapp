@@ -3,7 +3,7 @@ import { useData } from '../../context/DataContext';
 import { Template } from '../../types';
 
 const AdminFeaturedManagerScreen: React.FC = () => {
-    const { templates, appSettings, updateAppSettings } = useData();
+    const { adminTemplates, appSettings, updateAppSettings } = useData();
     const [featuredIds, setFeaturedIds] = useState<string[]>([]);
     const [availableTemplates, setAvailableTemplates] = useState<Template[]>([]);
     const [featuredTemplates, setFeaturedTemplates] = useState<Template[]>([]);
@@ -11,7 +11,7 @@ const AdminFeaturedManagerScreen: React.FC = () => {
     const [successMessage, setSuccessMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const templateMap = useMemo(() => new Map(templates.map(t => [t.id, t])), [templates]);
+    const templateMap = useMemo(() => new Map(adminTemplates.map(t => [t.id, t])), [adminTemplates]);
 
     useEffect(() => {
         const currentFeaturedIds = appSettings.featuredTemplates || [];
@@ -21,11 +21,11 @@ const AdminFeaturedManagerScreen: React.FC = () => {
             .map(id => templateMap.get(id))
             .filter((t): t is Template => !!t);
 
-        const available = templates.filter(t => t.is_active && !currentFeaturedIds.includes(t.id));
+        const available = adminTemplates.filter(t => t.is_active && !currentFeaturedIds.includes(t.id));
 
         setFeaturedTemplates(featured);
         setAvailableTemplates(available);
-    }, [appSettings.featuredTemplates, templates, templateMap]);
+    }, [appSettings.featuredTemplates, adminTemplates, templateMap]);
 
     const addToFeatured = (templateId: string) => {
         if (featuredIds.length >= 10) {
@@ -34,12 +34,14 @@ const AdminFeaturedManagerScreen: React.FC = () => {
             return;
         }
         if (!featuredIds.includes(templateId)) {
-            setFeaturedIds(prev => [...prev, templateId]);
+            const newFeaturedIds = [...featuredIds, templateId];
+            setFeaturedIds(newFeaturedIds);
         }
     };
 
     const removeFromFeatured = (templateId: string) => {
-        setFeaturedIds(prev => prev.filter(id => id !== templateId));
+        const newFeaturedIds = featuredIds.filter(id => id !== templateId);
+        setFeaturedIds(newFeaturedIds);
     };
 
     const moveItem = (index: number, direction: 'up' | 'down') => {
@@ -66,6 +68,18 @@ const AdminFeaturedManagerScreen: React.FC = () => {
             setTimeout(() => setSuccessMessage(''), 3000);
         }
     };
+    
+    // This effect updates the display lists immediately when featuredIds changes
+    useEffect(() => {
+        const featured = featuredIds
+            .map(id => templateMap.get(id))
+            .filter((t): t is Template => !!t);
+
+        const available = adminTemplates.filter(t => t.is_active && !featuredIds.includes(t.id));
+        setFeaturedTemplates(featured);
+        setAvailableTemplates(available);
+    }, [featuredIds, adminTemplates, templateMap]);
+
 
     return (
         <div>
@@ -85,9 +99,9 @@ const AdminFeaturedManagerScreen: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Available Templates */}
-                <div className="bg-white p-6 rounded-[20px] shadow-sm">
+                <div className="bg-white p-6 rounded-[20px] shadow-sm flex flex-col">
                     <h2 className="text-xl font-bold text-[#2C3E50] mb-4">Available Templates</h2>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                    <div className="space-y-2 flex-grow overflow-y-auto max-h-[60vh]">
                         {availableTemplates.map(template => (
                             <div key={template.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                                 <span className="text-[#2C3E50] truncate">{template.title}</span>
@@ -98,15 +112,15 @@ const AdminFeaturedManagerScreen: React.FC = () => {
                 </div>
 
                 {/* Featured Templates */}
-                <div className="bg-white p-6 rounded-[20px] shadow-sm">
+                <div className="bg-white p-6 rounded-[20px] shadow-sm flex flex-col">
                     <h2 className="text-xl font-bold text-[#2C3E50] mb-4">Featured Templates ({featuredIds.length}/10)</h2>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                    <div className="space-y-2 flex-grow overflow-y-auto max-h-[60vh]">
                         {featuredTemplates.map((template, index) => (
                              <div key={template.id} className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
                                 <span className="font-semibold text-orange-800 truncate">{index + 1}. {template.title}</span>
                                 <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                                     <button onClick={() => moveItem(index, 'up')} disabled={index === 0}>↑</button>
-                                     <button onClick={() => moveItem(index, 'down')} disabled={index === featuredTemplates.length - 1}>↓</button>
+                                     <button onClick={() => moveItem(index, 'up')} disabled={index === 0} className="px-1 disabled:opacity-20">↑</button>
+                                     <button onClick={() => moveItem(index, 'down')} disabled={index === featuredTemplates.length - 1} className="px-1 disabled:opacity-20">↓</button>
                                     <button onClick={() => removeFromFeatured(template.id)} className="text-sm text-red-600 hover:underline">Remove</button>
                                 </div>
                             </div>

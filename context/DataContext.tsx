@@ -10,7 +10,8 @@ const TEMPLATES_PER_PAGE = 12;
 interface DataContextType {
   // State
   users: User[];
-  templates: Template[];
+  templates: Template[]; // Paginated for users
+  adminTemplates: Template[]; // All templates for admin
   bookmarks: Bookmark[];
   likes: Like[];
   savedDesigns: SavedDesign[];
@@ -44,15 +45,15 @@ interface DataContextType {
   getSavedDesignById: (designId: string) => SavedDesign | undefined;
   saveDesign: (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => Promise<void>;
   addDownload: (downloadData: Omit<Download, 'id' | 'user_id' | 'timestamp'>) => Promise<void>;
-  submitTemplate: (submissionData: Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'status' | 'is_active' | 'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
+  submitTemplate: (submissionData: Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'status' | 'is_active' | 'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
   getDownloadsForTemplate: (templateId: string) => number;
   updateUsername: (newUsername: string) => Promise<void>;
   submitSuggestion: (text: string) => Promise<void>;
   subscribeToNotifications: () => Promise<void>;
 
   // Admin Actions
-  adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
-  updateTemplate: (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File, compositeFile?: Blob}) => Promise<void>;
+  adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
+  updateTemplate: (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>) => Promise<void>;
   deleteTemplate: (templateId: string) => Promise<void>;
   approveTemplate: (templateId: string) => Promise<void>;
   rejectTemplate: (templateId: string) => Promise<void>;
@@ -92,6 +93,7 @@ const defaultAppSettings: AppSettings = {
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [adminTemplates, setAdminTemplates] = useState<Template[]>([]); // For admin use
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [likes, setLikes] = useState<Like[]>([]);
   const [savedDesigns, setSavedDesigns] = useState<SavedDesign[]>([]);
@@ -163,22 +165,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (user) {
             const userDocRef = db.collection("users").doc(user.uid);
             const userDoc = await userDocRef.get();
-            if(userDoc.exists && auth.currentUser && auth.currentUser.uid === user.uid){
+            if(userDoc.exists && userDoc.data()){
                 const userDataFromDb = userDoc.data() as UserFromFirestore;
-                if (!userDataFromDb.name || !userDataFromDb.creator_id) {
-                  // Handle case of user created via Google but DB doc not ready
-                  // Or some other inconsistent state. For now, we log out.
-                  await auth.signOut();
-                  return;
-                }
                 const plainUserObject: User = { 
                     id: user.uid, 
-                    name: userDataFromDb.name,
-                    email: userDataFromDb.email,
+                    name: userDataFromDb.name || 'User',
+                    email: userDataFromDb.email || user.email || '',
                     emailVerified: userDataFromDb.emailVerified,
-                    photo_url: userDataFromDb.photo_url,
-                    role: userDataFromDb.role,
-                    creator_id: userDataFromDb.creator_id,
+                    photo_url: userDataFromDb.photo_url || `https://i.pravatar.cc/150?u=${user.uid}`,
+                    role: userDataFromDb.role || Role.USER,
+                    creator_id: userDataFromDb.creator_id || '',
                     created_at: toISOStringSafe(userDataFromDb.created_at),
                     lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
                     fcmTokens: userDataFromDb.fcmTokens || []
@@ -204,6 +200,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 id: doc.id,
                 name: data.name,
                 email: data.email,
+                emailVerified: data.emailVerified,
                 photo_url: data.photo_url,
                 role: data.role,
                 creator_id: data.creator_id,
@@ -286,61 +283,57 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [currentUser]);
 
-  // *** PERFORMANCE: Initial Template Fetch (First Page) ***
+  // *** PERFORMANCE: Real-time paginated listener for users ***
   useEffect(() => {
-      setTemplatesLoading(true);
-      const q = db.collection("templates").orderBy("created_at", "desc").limit(TEMPLATES_PER_PAGE);
+    if (currentUser?.role === Role.ADMIN) {
+        setTemplates([]);
+        setTemplatesLoading(false);
+        setHasMoreTemplates(false);
+        return;
+    }
+    setTemplatesLoading(true);
+    const q = db.collection("templates").orderBy("created_at", "desc").limit(TEMPLATES_PER_PAGE);
 
-      q.get().then(async (snapshot) => {
-          if (snapshot.empty) {
-              setTemplates([]);
-              setHasMoreTemplates(false);
-              setTemplatesLoading(false);
-              return;
-          }
+    const unsub = q.onSnapshot((snapshot) => {
+        if (snapshot.empty) {
+            setTemplates([]);
+            setHasMoreTemplates(false);
+        } else {
+            const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+            setLastTemplateVisible(lastVisible);
+            setHasMoreTemplates(snapshot.docs.length === TEMPLATES_PER_PAGE);
+            const fetchedTemplates = snapshot.docs.map(doc => ({
+                id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
+            })) as Template[];
+            setTemplates(fetchedTemplates);
+        }
+        setTemplatesLoading(false);
+    }, (error) => {
+        console.error("Error fetching initial templates:", error);
+        setTemplatesLoading(false);
+    });
+    
+    return () => unsub();
+  }, [currentUser]);
 
-          const lastVisible = snapshot.docs[snapshot.docs.length - 1];
-          setLastTemplateVisible(lastVisible);
-          setHasMoreTemplates(snapshot.docs.length === TEMPLATES_PER_PAGE);
+  // *** PERFORMANCE: Listener for ALL templates for ADMINS ONLY ***
+  useEffect(() => {
+    if (currentUser?.role !== Role.ADMIN) {
+        setAdminTemplates([]);
+        return;
+    }
+    const unsub = db.collection("templates").orderBy("created_at", "desc").onSnapshot((snapshot) => {
+        const allTemplates = snapshot.docs.map(doc => ({
+            id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
+        } as Template));
+        setAdminTemplates(allTemplates);
+    }, (error) => console.error("Error fetching all templates for admin:", error));
+    return () => unsub();
+  }, [currentUser]);
 
-          const fetchedTemplates = snapshot.docs.map(doc => ({
-              id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
-          }));
-          
-          // This part is still slow but better than a listener.
-          const templatesWithCounts = await calculateCountsFor(fetchedTemplates);
-          setTemplates(templatesWithCounts);
-          setTemplatesLoading(false);
-      });
-  }, []);
-  
-  const calculateCountsFor = async (templatesToProcess: any[]): Promise<Template[]> => {
-      const downloadsPromise = db.collection("downloads").get();
-      const likesPromise = db.collection("likes").get();
-
-      const [downloadSnapshot, likeSnapshot] = await Promise.all([downloadsPromise, likesPromise]);
-      
-      const downloadCounts = new Map<string, number>();
-      downloadSnapshot.docs.forEach(doc => {
-          const templateId = doc.data().template_id;
-          downloadCounts.set(templateId, (downloadCounts.get(templateId) || 0) + 1);
-      });
-
-      const likeCounts = new Map<string, number>();
-      likeSnapshot.docs.forEach(doc => {
-          const templateId = doc.data().template_id;
-          likeCounts.set(templateId, (likeCounts.get(templateId) || 0) + 1);
-      });
-      
-      return templatesToProcess.map(template => ({
-          ...template,
-          downloadCount: downloadCounts.get(template.id) || 0,
-          likeCount: likeCounts.get(template.id) || 0
-      }));
-  };
 
   const fetchMoreTemplates = async () => {
-      if (!lastTemplateVisible || !hasMoreTemplates || templatesLoading) return;
+      if (!lastTemplateVisible || !hasMoreTemplates || templatesLoading || currentUser?.role === Role.ADMIN) return;
       
       setTemplatesLoading(true);
 
@@ -363,10 +356,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const newTemplates = snapshot.docs.map(doc => ({
           id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
-      }));
+      })) as Template[];
 
-      const newTemplatesWithCounts = await calculateCountsFor(newTemplates);
-      setTemplates(prev => [...prev, ...newTemplatesWithCounts]);
+      setTemplates(prev => [...prev, ...newTemplates]);
       setTemplatesLoading(false);
   };
 
@@ -445,7 +437,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.removeItem('timepass-katta-user');
   };
 
-  const getTemplateById = (templateId: string) => templates.find(t => t.id === templateId);
+  const getTemplateById = (templateId: string) => {
+    // Admin will have all templates, user will have paginated ones
+    const sourceArray = currentUser?.role === Role.ADMIN ? adminTemplates : templates;
+    return sourceArray.find(t => t.id === templateId);
+  }
 
   const getIsBookmarked = (templateId: string) => {
     if (!currentUser) return false;
@@ -475,15 +471,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const toggleLike = async (templateId: string) => {
     if (!currentUser) return;
     const existingLike = likes.find(l => l.template_id === templateId);
+    const templateRef = db.collection("templates").doc(templateId);
+    const increment = firebase.firestore.FieldValue.increment;
 
     if (existingLike) {
       await db.collection("likes").doc(existingLike.id).delete();
+      await templateRef.update({ likeCount: increment(-1) });
     } else {
       await db.collection("likes").add({
         user_id: currentUser.id,
         template_id: templateId,
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
       });
+      await templateRef.update({ likeCount: increment(1) });
     }
   };
   
@@ -513,25 +513,53 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const addDownload = async (downloadData: Omit<Download, 'id'|'user_id'|'timestamp'>) => {
       if(!currentUser) return;
-      await db.collection("downloads").add({
+      const templateRef = db.collection("templates").doc(downloadData.template_id);
+      const downloadRef = db.collection("downloads").doc();
+      const batch = db.batch();
+
+      batch.set(downloadRef, {
           ...downloadData,
           user_id: currentUser.id,
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
       });
+      batch.update(templateRef, {
+          downloadCount: firebase.firestore.FieldValue.increment(1)
+      });
+      
+      await batch.commit();
   };
   
-  const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
+  const generateUniqueCode = async (): Promise<string> => {
+    const counterRef = db.collection('counters').doc('templates');
+    let newCode = 'TK0001';
+
+    await db.runTransaction(async (transaction) => {
+        const counterDoc = await transaction.get(counterRef);
+        const currentCount = counterDoc.exists ? (counterDoc.data()?.count || 0) : 0;
+        const newCount = currentCount + 1;
+        newCode = `TK${String(newCount).padStart(4, '0')}`;
+        transaction.set(counterRef, { count: newCount }, { merge: true });
+    });
+
+    return newCode;
+  };
+  
+  const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
     if(!currentUser || currentUser.role !== Role.USER) return;
     
     const templateDocRef = db.collection('templates').doc();
     const templateId = templateDocRef.id;
 
-    const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
-    const bg_preview_url = await uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`);
-    const composite_preview_url = await uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`);
+    const [png_url, bg_preview_url, composite_preview_url, uniqueCode] = await Promise.all([
+        uploadFile(files.pngFile, `templates/${templateId}/overlay.png`),
+        uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`),
+        uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`),
+        generateUniqueCode()
+    ]);
 
     const newSubmission = {
         ...submissionData,
+        uniqueCode,
         png_url,
         bg_preview_url,
         composite_preview_url,
@@ -540,6 +568,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         status: SubmissionStatus.PENDING,
         is_active: false,
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
+        likeCount: 0,
+        downloadCount: 0,
     };
     await templateDocRef.set(newSubmission);
   };
@@ -606,18 +636,22 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   // Admin functions
-  const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
+  const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
       const templateDocRef = db.collection('templates').doc();
       const templateId = templateDocRef.id;
 
-      const png_url = await uploadFile(files.pngFile, `templates/${templateId}/overlay.png`);
-      const bg_preview_url = await uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`);
-      const composite_preview_url = await uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`);
+      const [png_url, bg_preview_url, composite_preview_url, uniqueCode] = await Promise.all([
+        uploadFile(files.pngFile, `templates/${templateId}/overlay.png`),
+        uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`),
+        uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`),
+        generateUniqueCode()
+    ]);
 
 
       const newTemplate = {
           ...submissionData,
+          uniqueCode,
           png_url,
           bg_preview_url,
           composite_preview_url,
@@ -626,30 +660,23 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           status: SubmissionStatus.APPROVED,
           is_active: true,
           created_at: firebase.firestore.FieldValue.serverTimestamp(),
+          likeCount: 0,
+          downloadCount: 0,
       };
       await templateDocRef.set(newTemplate);
   };
 
-  const updateTemplate = async (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>, newFiles?: {pngFile?: File, bgFile?: File, compositeFile?: Blob}) => {
+  const updateTemplate = async (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
 
       const updateData: any = { ...templateData };
-      if(newFiles?.pngFile) {
-          updateData.png_url = await uploadFile(newFiles.pngFile, `templates/${templateId}/overlay.png`);
-      }
-      if(newFiles?.bgFile) {
-          updateData.bg_preview_url = await uploadFile(newFiles.bgFile, `templates/${templateId}/bg_preview.jpg`);
-      }
-      if(newFiles?.compositeFile) {
-          updateData.composite_preview_url = await uploadFile(newFiles.compositeFile, `templates/${templateId}/composite_preview.jpg`);
-      }
       
       await db.collection("templates").doc(templateId).update(updateData);
   };
 
   const deleteTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
-    const template = templates.find(t => t.id === templateId);
+    const template = adminTemplates.find(t => t.id === templateId);
     if(template){
         try { await storage.ref(`templates/${templateId}/overlay.png`).delete(); } catch(e) { console.error(e); }
         try { await storage.ref(`templates/${templateId}/bg_preview.jpg`).delete(); } catch(e) { console.error(e); }
@@ -720,7 +747,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const value = {
-    users, templates, bookmarks, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
+    users, templates, adminTemplates, bookmarks, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
     login, signup, startSession, logout,
     fetchMoreTemplates,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,

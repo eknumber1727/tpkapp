@@ -16,7 +16,7 @@ const getStatusChipClass = (status: SubmissionStatus) => {
 }
 
 const AdminTemplateManagerScreen: React.FC = () => {
-    const { templates, deleteTemplate } = useData();
+    const { adminTemplates, deleteTemplate } = useData();
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -25,17 +25,19 @@ const AdminTemplateManagerScreen: React.FC = () => {
     const [errorMessage, setErrorMessage] = useState('');
 
     const filteredTemplates = useMemo(() => {
-        return templates.filter(template => {
+        // FIX: Use adminTemplates to show all templates to the admin
+        return adminTemplates.filter(template => {
             const lowerSearchTerm = searchTerm.toLowerCase();
             if (!lowerSearchTerm) return true;
             return (
                 template.title.toLowerCase().includes(lowerSearchTerm) ||
                 template.uploader_username.toLowerCase().includes(lowerSearchTerm) ||
                 template.status.toLowerCase().includes(lowerSearchTerm) ||
+                template.uniqueCode.toLowerCase().includes(lowerSearchTerm) ||
                 template.tags.some(tag => tag.toLowerCase().includes(lowerSearchTerm))
             );
-        }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }, [templates, searchTerm]);
+        }); // No sort here as adminTemplates is already sorted by date
+    }, [adminTemplates, searchTerm]);
 
     const openDeleteModal = (template: Template) => {
         setTemplateToDelete(template);
@@ -76,7 +78,7 @@ const AdminTemplateManagerScreen: React.FC = () => {
                 <div className="relative mb-4">
                     <input
                         type="search"
-                        placeholder="Search by title, uploader, tag, status..."
+                        placeholder="Search by title, uploader, tag, code, status..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-3 bg-white rounded-full shadow-sm text-[#2C3E50] placeholder-[#7F8C8D] focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
@@ -89,7 +91,8 @@ const AdminTemplateManagerScreen: React.FC = () => {
                     <table className="w-full text-left">
                         <thead className="bg-gray-50 border-b">
                             <tr>
-                                <th className="p-4 text-sm font-semibold text-[#7F8C8D]">Title</th>
+                                <th className="p-4 text-sm font-semibold text-[#7F8C8D]">Preview</th>
+                                <th className="p-4 text-sm font-semibold text-[#7F8C8D]">Title & Code</th>
                                 <th className="p-4 text-sm font-semibold text-[#7F8C8D]">Category</th>
                                 <th className="p-4 text-sm font-semibold text-[#7F8C8D]">Uploader</th>
                                 <th className="p-4 text-sm font-semibold text-[#7F8C8D]">Status</th>
@@ -99,8 +102,12 @@ const AdminTemplateManagerScreen: React.FC = () => {
                         <tbody>
                             {filteredTemplates.map(template => (
                                 <tr key={template.id} className="border-b last:border-b-0">
+                                    <td className="p-2">
+                                        <img src={template.composite_preview_url} alt={template.title} className="w-14 h-auto aspect-[4/5] object-contain rounded-md bg-gray-100" />
+                                    </td>
                                     <td className="p-4 text-[#2C3E50]">
                                         {template.title}
+                                        <div className="text-xs text-gray-500 font-mono">{template.uniqueCode}</div>
                                     </td>
                                     <td className="p-4 text-[#2C3E50]">{template.category}</td>
                                     <td className="p-4 text-[#2C3E50] text-xs">@{template.uploader_username}</td>
@@ -123,16 +130,22 @@ const AdminTemplateManagerScreen: React.FC = () => {
                 <div className="space-y-4 md:hidden">
                     {filteredTemplates.map(template => (
                         <div key={template.id} className="bg-white rounded-[20px] shadow-sm p-4">
-                            <div className="flex justify-between items-start">
-                                 <div>
-                                    <h3 className="font-bold text-[#2C3E50]">{template.title}</h3>
-                                    <p className="text-sm text-[#7F8C8D]">{template.category}</p>
+                           <div className="flex gap-4">
+                                <img src={template.composite_preview_url} alt={template.title} className="w-20 h-24 object-contain rounded-lg bg-gray-100 flex-shrink-0" />
+                                <div className="flex-grow">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="font-bold text-[#2C3E50] leading-tight">{template.title}</h3>
+                                            <p className="text-xs text-gray-500 font-mono">{template.uniqueCode}</p>
+                                        </div>
+                                        <span className={`px-2 py-1 text-[10px] rounded-full capitalize flex-shrink-0 ${getStatusChipClass(template.status)}`}>
+                                            {template.status}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-[#7F8C8D] mt-1">{template.category}</p>
                                     <p className="text-xs text-[#7F8C8D]">@{template.uploader_username}</p>
                                 </div>
-                                <span className={`px-2 py-1 text-xs rounded-full capitalize ${getStatusChipClass(template.status)}`}>
-                                    {template.status}
-                                </span>
-                            </div>
+                           </div>
                             <div className="mt-4 border-t pt-2 flex justify-end space-x-4">
                                 <button onClick={() => navigate(`/templates/${template.id}/edit`)} className="text-sm text-blue-600 hover:underline">Edit</button>
                                 <button onClick={() => openDeleteModal(template)} className="text-sm text-red-600 hover:underline">Delete</button>

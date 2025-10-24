@@ -8,9 +8,11 @@ import { ChevronLeftIcon } from '../../components/shared/Icons';
 const AdminEditTemplateScreen: React.FC = () => {
     const { templateId } = useParams<{ templateId: string }>();
     const navigate = useNavigate();
-    const { getTemplateById, updateTemplate, categories, languages } = useData();
+    const { adminTemplates, getTemplateById, updateTemplate, categories, languages } = useData(); // Use adminTemplates
 
-    const [template, setTemplate] = useState<Template | null>(null);
+    // Use a local state `template` that is only set once.
+    const [template, setTemplate] = useState<Template | null | undefined>(undefined);
+
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState<CategoryName>('');
     const [language, setLanguage] = useState<string>('');
@@ -18,19 +20,13 @@ const AdminEditTemplateScreen: React.FC = () => {
     const [ratios, setRatios] = useState<AspectRatio[]>(['4:5']);
     const [isActive, setIsActive] = useState(true);
     
-    const [pngFile, setPngFile] = useState<File | null>(null);
-    const [bgFile, setBgFile] = useState<File | null>(null);
-    const [pngPreview, setPngPreview] = useState<string | null>(null);
-    const [bgPreview, setBgPreview] = useState<string | null>(null);
-    
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-
 
     useEffect(() => {
         if (templateId) {
-            const foundTemplate = getTemplateById(templateId);
+            // Find from adminTemplates for immediate access
+            const foundTemplate = adminTemplates.find(t => t.id === templateId);
             if (foundTemplate) {
                 setTemplate(foundTemplate);
                 setTitle(foundTemplate.title);
@@ -39,65 +35,12 @@ const AdminEditTemplateScreen: React.FC = () => {
                 setTags(foundTemplate.tags.join(', '));
                 setRatios(foundTemplate.ratios_supported);
                 setIsActive(foundTemplate.is_active);
-                setPngPreview(foundTemplate.png_url);
-                setBgPreview(foundTemplate.bg_preview_url);
+            } else if (adminTemplates.length > 0) {
+                // If templates are loaded but not found, it's a 404
+                setTemplate(null);
             }
         }
-    }, [templateId, getTemplateById]);
-
-     // Effect to clean up any newly created blob URLs when the component unmounts or previews change
-    useEffect(() => {
-        return () => {
-            if (pngPreview && pngPreview.startsWith('blob:')) URL.revokeObjectURL(pngPreview);
-            if (bgPreview && bgPreview.startsWith('blob:')) URL.revokeObjectURL(bgPreview);
-        };
-    }, [pngPreview, bgPreview]);
-
-    useEffect(() => {
-        const currentPng = pngPreview;
-        const currentBg = bgPreview;
-        if (currentPng && currentBg && canvasRef.current) {
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
-
-            const bgImage = new Image();
-            bgImage.crossOrigin = 'anonymous';
-            bgImage.src = currentBg.startsWith('blob:') ? currentBg : `/api/images${new URL(currentBg).pathname}`;
-            bgImage.onload = () => {
-                const pngImage = new Image();
-                pngImage.crossOrigin = 'anonymous';
-                pngImage.src = currentPng.startsWith('blob:') ? currentPng : `/api/images${new URL(currentPng).pathname}`;
-                pngImage.onload = () => {
-                    const previewWidth = 400;
-                    canvas.width = previewWidth;
-                    canvas.height = previewWidth * 1.25; // Default to 4:5 aspect ratio
-                    ctx.clearRect(0,0, canvas.width, canvas.height);
-                    ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(pngImage, 0, 0, canvas.width, canvas.height);
-                };
-                 pngImage.onerror = () => console.error("Failed to load PNG preview for canvas");
-            };
-            bgImage.onerror = () => console.error("Failed to load BG preview for canvas");
-        }
-    }, [pngPreview, bgPreview]);
-    
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, setFile: React.Dispatch<React.SetStateAction<File | null>>, setPreview: React.Dispatch<React.SetStateAction<string|null>>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setError('');
-            setFile(file);
-            // Create a new blob URL and let the useEffect cleanup handle the old one.
-            setPreview(URL.createObjectURL(file));
-        }
-    };
-    
-    const handleRatioChange = (ratio: AspectRatio) => {
-        setRatios(prev => 
-            prev.includes(ratio) ? prev.filter(r => r !== ratio) : [...prev, ratio]
-        );
-    }
+    }, [templateId, adminTemplates]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -109,58 +52,35 @@ const AdminEditTemplateScreen: React.FC = () => {
         setLoading(true);
         setError('');
 
-        const updatedData = {
-            title,
-            category,
-            language,
-            tags: tags.split(',').map(t => t.trim()),
-            ratios_supported: ratios,
-            ratio_default: ratios[0] || '4:5',
-            is_active: isActive,
-        };
-
-        const newFiles: { pngFile?: File, bgFile?: File, compositeFile?: Blob } = {};
-        if(pngFile) newFiles.pngFile = pngFile;
-        if(bgFile) newFiles.bgFile = bgFile;
-
-        // Generate new composite ONLY if images were changed
-        if ((pngFile || bgFile) && canvasRef.current) {
-            canvasRef.current.toBlob(async (blob) => {
-                if (!blob) {
-                    setError('Could not generate new preview image.');
-                    setLoading(false);
-                    return;
-                }
-                newFiles.compositeFile = blob;
-                try {
-                    await updateTemplate(templateId, updatedData, newFiles);
-                    alert('Template updated successfully!');
-                    navigate('/templates');
-                } catch (err) {
-                    console.error(err);
-                    setError('Failed to update template. Please try again.');
-                } finally {
-                    setLoading(false);
-                }
-            }, 'image/jpeg', 0.9);
-        } else {
-            // No new images, just update data
-            try {
-                await updateTemplate(templateId, updatedData, newFiles);
-                alert('Template updated successfully!');
-                navigate('/templates');
-            } catch (err) {
-                console.error(err);
-                setError('Failed to update template. Please try again.');
-            } finally {
-                setLoading(false);
-            }
+        try {
+            const updatedData = {
+                title,
+                category,
+                language,
+                tags: tags.split(',').map(t => t.trim()),
+                ratios_supported: ratios,
+                ratio_default: ratios[0] || '4:5',
+                is_active: isActive,
+            };
+            await updateTemplate(templateId, updatedData);
+            alert('Template updated successfully!');
+            navigate('/templates');
+        } catch (err) {
+            console.error(err);
+            setError('Failed to update template. Please try again.');
+        } finally {
+            setLoading(false);
         }
     };
 
-    if (!template) {
-        return <div className="p-4">Loading template...</div>;
+    if (template === undefined) {
+        return <div className="p-4 text-center">Loading template...</div>;
     }
+    
+    if (template === null) {
+        return <div className="p-4 text-center">Template not found.</div>;
+    }
+
 
     return (
         <div>
@@ -172,26 +92,22 @@ const AdminEditTemplateScreen: React.FC = () => {
             </div>
             <div className="bg-white p-6 rounded-[30px] shadow-sm max-w-2xl mx-auto">
                 <form onSubmit={handleSubmit} className="space-y-6">
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="font-semibold text-[#2C3E50]">1. Replace PNG Overlay (.png only)</label>
-                            <input type="file" onChange={(e) => handleFileChange(e, setPngFile, setPngPreview)} accept="image/png" className="w-full mt-1 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-[#FF7A00] hover:file:bg-orange-100"/>
-                            {pngPreview && <img src={pngPreview} alt="png preview" className="w-16 h-16 object-contain border rounded-md mt-2" />}
+                            <label className="font-semibold text-[#2C3E50]">Unique Code</label>
+                            <input type="text" value={template.uniqueCode} readOnly className="w-full mt-1 p-2 border rounded-lg bg-gray-100 text-gray-500 font-mono" />
                         </div>
-                        <div>
-                            <label className="font-semibold text-[#2C3E50]">2. Replace Preview Background</label>
-                            <input type="file" onChange={(e) => handleFileChange(e, setBgFile, setBgPreview)} accept="image/jpeg,image/png" className="w-full mt-1 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-[#FF7A00] hover:file:bg-orange-100"/>
-                            {bgPreview && <img src={bgPreview} alt="bg preview" className="w-16 h-16 object-cover border rounded-md mt-2" />}
+                         <div>
+                            <label className="font-semibold text-[#2C3E50]">Uploader</label>
+                            <input type="text" value={`@${template.uploader_username}`} readOnly className="w-full mt-1 p-2 border rounded-lg bg-gray-100 text-gray-500" />
                         </div>
                     </div>
 
-                    <div>
-                        <h3 className="font-semibold text-[#2C3E50] mb-2">3. Live Composite Preview</h3>
-                        <div className="bg-gray-100 rounded-lg p-2 flex justify-center">
-                            <canvas ref={canvasRef} className="rounded-md shadow-inner w-full max-w-[250px] aspect-[4/5]"></canvas>
-                        </div>
+                    <div className="flex justify-center my-4">
+                         <img src={template.composite_preview_url} alt="Preview" className="w-40 h-50 object-contain rounded-lg bg-gray-100 p-1 border" />
                     </div>
-                    
+
                     <hr />
 
                     <div>
@@ -218,7 +134,7 @@ const AdminEditTemplateScreen: React.FC = () => {
                         <label className="font-semibold text-[#2C3E50]">Supported Ratios</label>
                         <div className="grid grid-cols-3 gap-2 mt-2">
                             {ASPECT_RATIOS.map(ratio => (
-                                <button type="button" key={ratio} onClick={() => handleRatioChange(ratio)} className={`p-2 rounded-lg text-sm ${ratios.includes(ratio) ? 'bg-[#2C3E50] text-white' : 'bg-gray-100'}`}>
+                                <button type="button" key={ratio} onClick={() => setRatios(prev => prev.includes(ratio) ? prev.filter(r => r !== ratio) : [...prev, ratio])} className={`p-2 rounded-lg text-sm ${ratios.includes(ratio) ? 'bg-[#2C3E50] text-white' : 'bg-gray-100'}`}>
                                     {ratio}
                                 </button>
                             ))}

@@ -46,6 +46,9 @@ const TemplateCard: React.FC<TemplateCardProps> = ({ template }) => {
             className="w-full h-full object-contain"
             loading="lazy"
         />
+        <div className="absolute top-2 left-2 bg-black/40 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm">
+          {template.uniqueCode}
+        </div>
         <div className="absolute top-3 right-3 flex flex-col gap-2">
             <button
               onClick={handleLikeClick}

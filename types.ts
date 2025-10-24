@@ -60,6 +60,7 @@ export interface User {
 export interface Template {
   id: string;
   title: string;
+  uniqueCode: string;
   category: CategoryName;
   language: string;
   tags: string[];
@@ -77,8 +78,8 @@ export interface Template {
   uploader_id: string;
   uploader_username: string;
   created_at: string; // ISO Date string
-  downloadCount?: number;
-  likeCount?: number;
+  downloadCount: number;
+  likeCount: number;
 }
 
 export interface Bookmark {
@@ -150,7 +151,7 @@ export interface AppSettings {
   adSensePublisherId: string;
   adSenseSlotId: string;
   faviconUrl: string;
-  featuredTemplates?: string[];
+  featuredTemplates: string[];
 }
 
 export interface Notification {
