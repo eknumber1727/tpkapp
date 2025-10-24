@@ -51,13 +51,13 @@ const TemplateCard: React.FC<TemplateCardProps> = ({ template }) => {
         className="bg-white rounded-[20px] shadow-md overflow-hidden flex flex-col cursor-pointer transition-transform hover:scale-105"
         onClick={handleCreateNow}
     >
-      <div className={`relative ${getAspectRatioClasses(template.ratio_default)} bg-gray-100`}>
-        <img 
-            src={template.bg_preview_url} 
-            alt={`${template.title} background`}
-            className="w-full h-full object-cover"
-            loading="lazy"
-        />
+      <div className={`relative ${getAspectRatioClasses(template.ratio_default)} bg-gray-200`}>
+        {/* FIX: Using a div with background-image for the background is more robust and prevents stretching issues. */}
+        <div
+            style={{ backgroundImage: `url(${template.bg_preview_url})` }}
+            className="absolute inset-0 bg-cover bg-center"
+            aria-label={`${template.title} background`}
+        ></div>
         <img 
             src={template.png_url} 
             alt={`${template.title} overlay`}

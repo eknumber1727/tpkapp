@@ -57,6 +57,62 @@ const EditorScreen: React.FC = () => {
     setIsMobile(!!(navigator.share && navigator.canShare));
   }, []);
 
+  const autoFitMedia = useCallback(() => {
+    if (!mediaRef.current || !canvasContainerRef.current) return;
+    
+    const media = mediaRef.current;
+    const container = canvasContainerRef.current;
+    
+    const containerWidth = container.offsetWidth;
+    const containerHeight = container.offsetHeight;
+    
+    const mediaWidth = media instanceof HTMLImageElement ? media.naturalWidth : media.videoWidth;
+    const mediaHeight = media instanceof HTMLImageElement ? media.naturalHeight : media.videoHeight;
+    
+    if (mediaWidth === 0 || mediaHeight === 0) return;
+    
+    const containerRatio = containerWidth / containerHeight;
+    const mediaRatio = mediaWidth / mediaHeight;
+    
+    let scale;
+    // We want to "cover" the container
+    if (mediaRatio > containerRatio) {
+      // Media is wider, so match height and let width overflow
+      scale = containerHeight / mediaHeight;
+    } else {
+      // Media is taller, so match width and let height overflow
+      scale = containerWidth / mediaWidth;
+    }
+    
+    const x = (containerWidth - (mediaWidth * scale)) / 2;
+    const y = (containerHeight - (mediaHeight * scale)) / 2;
+    
+    setTransform({ x, y, scale });
+  }, []);
+
+  useEffect(() => {
+    if (userMedia && mediaRef.current) {
+      const media = mediaRef.current;
+      const eventToListen = userMedia.type === 'video' ? 'loadeddata' : 'load';
+      
+      const handler = () => {
+        // If it's a new upload (not from a saved draft), auto-fit it.
+        if (!existingDraft) {
+          autoFitMedia();
+        }
+      };
+      
+      // If media is already loaded (e.g., from cache), run handler immediately
+      if ((media instanceof HTMLImageElement && media.complete) || (media instanceof HTMLVideoElement && media.readyState > 0)) {
+        handler();
+      } else {
+        media.addEventListener(eventToListen, handler);
+      }
+      
+      return () => media.removeEventListener(eventToListen, handler);
+    }
+  }, [userMedia, existingDraft, autoFitMedia]);
+
   useEffect(() => {
     if (existingDraft && template) {
         setUserMedia({ src: existingDraft.layers_json.bgMediaUrl, type: existingDraft.layers_json.bgType });
@@ -73,12 +129,12 @@ const EditorScreen: React.FC = () => {
       const url = URL.createObjectURL(file);
       const type = file.type.startsWith('video') ? 'video' : 'image';
       setUserMedia({ src: url, type });
-      resetTransform();
+      // The auto-fit logic is now handled by the useEffect hook.
     }
   };
   
   const resetTransform = () => {
-      setTransform({ x: 0, y: 0, scale: 1 });
+      autoFitMedia();
   }
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -95,9 +151,12 @@ const EditorScreen: React.FC = () => {
   const handleMouseUp = () => setIsDragging(false);
 
   const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const scaleAmount = e.deltaY * -0.001;
-    setTransform(prev => ({...prev, scale: Math.max(0.1, prev.scale + scaleAmount)}));
+    // FIX: Only zoom if the Ctrl key is pressed to prevent accidental zooming on scroll.
+    if (e.ctrlKey) {
+        e.preventDefault();
+        const scaleAmount = e.deltaY * -0.001;
+        setTransform(prev => ({...prev, scale: Math.max(0.1, prev.scale + scaleAmount)}));
+    }
   };
 
   useEffect(() => {
@@ -219,14 +278,14 @@ const EditorScreen: React.FC = () => {
           {userMedia ? (
             <>
               <div 
-                className="absolute top-0 left-0"
+                className="absolute top-0 left-0 origin-top-left"
                 style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, cursor: isDragging ? 'grabbing' : 'grab' }}
                 onMouseDown={handleMouseDown}
               >
                 {userMedia.type === 'image' ? (
-                  <img ref={mediaRef as React.RefObject<HTMLImageElement>} src={userMedia.src} alt="User upload" className="pointer-events-none" />
+                  <img ref={mediaRef as React.RefObject<HTMLImageElement>} src={userMedia.src} alt="User upload" className="pointer-events-none max-w-none" />
                 ) : (
-                  <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={userMedia.src} autoPlay muted loop className="pointer-events-none" />
+                  <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={userMedia.src} autoPlay muted loop className="pointer-events-none max-w-none" />
                 )}
               </div>
               <img src={template.png_url} alt="Template overlay" className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none z-10" />

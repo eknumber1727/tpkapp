@@ -1,22 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { ASPECT_RATIOS, LANGUAGES } from '../../constants';
+import { ASPECT_RATIOS } from '../../constants';
 import { CategoryName, AspectRatio, Template } from '../../types';
 import { ChevronLeftIcon } from '../../components/shared/Icons';
 
 const AdminEditTemplateScreen: React.FC = () => {
     const { templateId } = useParams<{ templateId: string }>();
     const navigate = useNavigate();
-    const { getTemplateById, updateTemplate, categories } = useData();
+    const { getTemplateById, updateTemplate, categories, languages } = useData();
 
     const [template, setTemplate] = useState<Template | null>(null);
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState<CategoryName>('');
-    const [language, setLanguage] = useState<string>(LANGUAGES[0]);
+    const [language, setLanguage] = useState<string>('');
     const [tags, setTags] = useState('');
     const [ratios, setRatios] = useState<AspectRatio[]>(['4:5']);
     const [isActive, setIsActive] = useState(true);
+    const [isFeatured, setIsFeatured] = useState(false);
     
     const [pngFile, setPngFile] = useState<File | null>(null);
     const [bgFile, setBgFile] = useState<File | null>(null);
@@ -39,6 +40,7 @@ const AdminEditTemplateScreen: React.FC = () => {
                 setTags(foundTemplate.tags.join(', '));
                 setRatios(foundTemplate.ratios_supported);
                 setIsActive(foundTemplate.is_active);
+                setIsFeatured(foundTemplate.is_featured || false);
                 setPngPreview(foundTemplate.png_url);
                 setBgPreview(foundTemplate.bg_preview_url);
             }
@@ -117,6 +119,7 @@ const AdminEditTemplateScreen: React.FC = () => {
             ratios_supported: ratios,
             ratio_default: ratios[0] || '4:5',
             is_active: isActive,
+            is_featured: isFeatured,
         };
 
         const newFiles: { pngFile?: File, bgFile?: File, compositeFile?: Blob } = {};
@@ -207,7 +210,7 @@ const AdminEditTemplateScreen: React.FC = () => {
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Language</label>
                         <select value={language} onChange={e => setLanguage(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white">
-                            {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                            {languages.map(lang => <option key={lang.id} value={lang.name}>{lang.name}</option>)}
                         </select>
                     </div>
                     <div>
@@ -224,10 +227,14 @@ const AdminEditTemplateScreen: React.FC = () => {
                             ))}
                         </div>
                     </div>
-                    <div>
-                        <label className="flex items-center gap-2">
-                            <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+                    <div className="flex justify-between items-center flex-wrap gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#FF7A00] focus:ring-[#FFB800]" />
                             <span className="font-semibold text-[#2C3E50]">Is Active</span>
+                        </label>
+                         <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={isFeatured} onChange={e => setIsFeatured(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#FF7A00] focus:ring-[#FFB800]" />
+                            <span className="font-semibold text-[#2C3E50]">Featured (Show in Trending)</span>
                         </label>
                     </div>
                     

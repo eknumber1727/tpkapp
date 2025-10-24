@@ -5,7 +5,6 @@ import TemplateCard from '../../components/user/TemplateCard';
 import CategoryChips from '../../components/user/CategoryChips';
 import { SearchIcon } from '../../components/shared/Icons';
 import { CategoryName } from '../../types';
-import { LANGUAGES } from '../../constants';
 import AdBanner from '../../components/shared/AdBanner';
 import TemplateCardSkeleton from '../../components/user/TemplateCardSkeleton';
 
@@ -14,23 +13,30 @@ type SortOption = 'Latest' | 'Trending' | 'Most Liked';
 const TrendingTemplates: React.FC = () => {
     const { templates, loading } = useData();
     const trendingTemplates = useMemo(() => {
-        return [...templates]
-            .filter(t => t.is_active)
-            .sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0))
-            .slice(0, 10);
+        // FEATURE: Show only templates marked as "featured" by the admin
+        return templates.filter(t => t.is_active && t.is_featured);
     }, [templates]);
 
-    if (loading || trendingTemplates.length === 0) return null;
+    if (loading && trendingTemplates.length === 0) return null; // Don't show if loading and no items yet
+    if (!loading && trendingTemplates.length === 0) return null; // Don't show if there are no featured templates
 
     return (
         <div className="py-4">
             <h2 className="text-xl font-bold text-[#2C3E50] px-4 mb-3">Trending Now</h2>
             <div className="flex overflow-x-auto gap-4 px-4 pb-2 scrollbar-hide">
-                {trendingTemplates.map(template => (
-                    <div key={template.id} className="w-48 flex-shrink-0">
-                        <TemplateCard template={template} />
-                    </div>
-                ))}
+                 {loading ? (
+                    Array.from({ length: 5 }).map((_, index) => (
+                        <div key={index} className="w-48 flex-shrink-0">
+                            <TemplateCardSkeleton />
+                        </div>
+                    ))
+                ) : (
+                    trendingTemplates.map(template => (
+                        <div key={template.id} className="w-48 flex-shrink-0">
+                            <TemplateCard template={template} />
+                        </div>
+                    ))
+                )}
             </div>
         </div>
     )
@@ -38,7 +44,7 @@ const TrendingTemplates: React.FC = () => {
 
 
 const UserHomeScreen: React.FC = () => {
-  const { templates, categories, loading } = useData();
+  const { templates, categories, languages, loading } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryName | 'All'>('All');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
@@ -118,7 +124,7 @@ const UserHomeScreen: React.FC = () => {
             className="bg-white px-3 py-3 rounded-full shadow-sm text-[#2C3E50] focus:outline-none focus:ring-2 focus:ring-[#FFB800] appearance-none"
           >
             <option value="All">All Languages</option>
-            {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+            {languages.map(lang => <option key={lang.id} value={lang.name}>{lang.name}</option>)}
           </select>
         </div>
         <CategoryChips categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />

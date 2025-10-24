@@ -8,6 +8,4 @@ export const ASPECT_RATIOS: AspectRatio[] = [
   '3:4',
 ];
 
-export const LANGUAGES: string[] = ['English', 'Hindi', 'Marathi'];
-
 export const APP_NAME = "www.timepasskatta.app";

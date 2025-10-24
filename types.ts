@@ -14,6 +14,11 @@ export interface Category {
   name: CategoryName;
 }
 
+export interface Language {
+  id: string;
+  name: string;
+}
+
 export enum SubmissionStatus {
     PENDING = 'pending',
     APPROVED = 'approved',
@@ -65,6 +70,7 @@ export interface Template {
   
   status: SubmissionStatus;
   is_active: boolean;
+  is_featured?: boolean;
   
   ratio_default: AspectRatio;
   ratios_supported: AspectRatio[];

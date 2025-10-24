@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { APP_NAME } from '../constants';
 
 const LoginScreen: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -36,7 +35,7 @@ const LoginScreen: React.FC = () => {
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#F8F9FA] p-4">
       <div className="w-full max-w-sm mx-auto bg-white p-8 rounded-[30px] shadow-lg">
         <h1 className="text-3xl font-bold text-center text-[#2C3E50] mb-2">
-          {APP_NAME}
+          Timepass Katta
         </h1>
         <p className="text-center text-[#7F8C8D] mt-2 mb-8">
             {isLogin ? 'Login to continue' : 'Create a new account'}

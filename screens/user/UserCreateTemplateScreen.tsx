@@ -1,16 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { ASPECT_RATIOS, LANGUAGES } from '../../constants';
+import { ASPECT_RATIOS } from '../../constants';
 import { CategoryName, AspectRatio, Role } from '../../types';
 
 const UserCreateTemplateScreen: React.FC = () => {
     const navigate = useNavigate();
-    const { currentUser, submitTemplate, adminSubmitTemplate, categories } = useData();
+    const { currentUser, submitTemplate, adminSubmitTemplate, categories, languages } = useData();
 
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState<CategoryName>('');
-    const [language, setLanguage] = useState<string>(LANGUAGES[0]);
+    const [language, setLanguage] = useState<string>('');
     const [tags, setTags] = useState('');
     const [ratios, setRatios] = useState<AspectRatio[]>(['4:5']);
     const [pngFile, setPngFile] = useState<File | null>(null);
@@ -21,6 +21,13 @@ const UserCreateTemplateScreen: React.FC = () => {
     const [loading, setLoading] = useState(false);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        // Set default language if available
+        if (languages.length > 0 && !language) {
+            setLanguage(languages[0].name);
+        }
+    }, [languages, language]);
     
     // Effect to clean up blob URLs to prevent memory leaks
     useEffect(() => {
@@ -71,8 +78,8 @@ const UserCreateTemplateScreen: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!pngFile || !bgFile || ratios.length === 0 || !title.trim() || !tags.trim() || !category) {
-            setError('Please fill all fields, upload both images, and select a category.');
+        if (!pngFile || !bgFile || ratios.length === 0 || !title.trim() || !tags.trim() || !category || !language) {
+            setError('Please fill all fields, upload both images, and select a category and language.');
             return;
         }
         if (!canvasRef.current) {
@@ -169,8 +176,9 @@ const UserCreateTemplateScreen: React.FC = () => {
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Language</label>
-                        <select value={language} onChange={e => setLanguage(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white">
-                            {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                        <select value={language} onChange={e => setLanguage(e.target.value)} required className="w-full mt-1 p-2 border rounded-lg bg-white">
+                            <option value="" disabled>Select a language</option>
+                            {languages.map(lang => <option key={lang.id} value={lang.name}>{lang.name}</option>)}
                         </select>
                     </div>
                     <div>

@@ -26,6 +26,8 @@ import { Role } from './types';
 import AdminCategoryManagerScreen from './screens/admin/AdminCategoryManagerScreen';
 import AdminSuggestionsScreen from './screens/admin/AdminSuggestionsScreen';
 import AdminNotificationsManagerScreen from './screens/admin/AdminNotificationsManagerScreen';
+import AdminAppSettingsManagerScreen from './screens/admin/AdminAppSettingsManagerScreen';
+import AdminLanguageManagerScreen from './screens/admin/AdminLanguageManagerScreen';
 
 const UserRoutes = () => (
   <UserLayout>
@@ -55,8 +57,10 @@ const AdminRoutes = () => (
       <Route path="/templates" element={<AdminTemplateManagerScreen />} />
       <Route path="/submissions" element={<AdminSubmissionsManagerScreen />} />
       <Route path="/categories" element={<AdminCategoryManagerScreen />} />
+      <Route path="/languages" element={<AdminLanguageManagerScreen />} />
       <Route path="/suggestions" element={<AdminSuggestionsScreen />} />
       <Route path="/notifications" element={<AdminNotificationsManagerScreen />} />
+      <Route path="/settings" element={<AdminAppSettingsManagerScreen />} />
       <Route path="/create-template" element={<UserCreateTemplateScreen />} />
       <Route path="/templates/:templateId/edit" element={<AdminEditTemplateScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />

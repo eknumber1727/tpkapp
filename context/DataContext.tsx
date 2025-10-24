@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Role, SubmissionStatus } from '../types';
-import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like } from '../types';
+import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, Language } from '../types';
 // FIX: Import firebase default for compat types, and named exports for service instances.
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,6 +15,7 @@ interface DataContextType {
   savedDesigns: SavedDesign[];
   downloads: Download[];
   categories: Category[];
+  languages: Language[];
   suggestions: Suggestion[];
   notifications: Notification[];
   appSettings: AppSettings;
@@ -51,6 +52,8 @@ interface DataContextType {
   rejectTemplate: (templateId: string) => Promise<void>;
   addCategory: (name: CategoryName) => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
+  addLanguage: (name: string) => Promise<void>;
+  deleteLanguage: (languageId: string) => Promise<void>;
   updateAppSettings: (settings: Partial<AppSettings>) => Promise<void>;
   uploadAdminFile: (file: File | Blob, path: string) => Promise<string>;
   sendNotification: (title: string, body: string) => Promise<void>;
@@ -87,6 +90,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [savedDesigns, setSavedDesigns] = useState<SavedDesign[]>([]);
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
@@ -214,6 +218,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 composite_preview_url: data.composite_preview_url,
                 status: data.status,
                 is_active: data.is_active,
+                is_featured: data.is_featured || false,
                 ratio_default: data.ratio_default,
                 ratios_supported: data.ratios_supported,
                 uploader_id: data.uploader_id,
@@ -264,6 +269,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
     }, (error) => console.error("Error fetching categories:", error));
 
+    const unsubLanguages = db.collection("languages").onSnapshot((snapshot) => {
+        setLanguages(snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                name: data.name
+            } as Language;
+        }));
+    }, (error) => console.error("Error fetching languages:", error));
+
     const unsubSuggestions = db.collection("suggestions").onSnapshot((snapshot) => {
         setSuggestions(snapshot.docs.map(doc => {
             const data = doc.data();
@@ -311,6 +326,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         unsubUsers();
         unsubTemplates();
         unsubCategories();
+        unsubLanguages();
         unsubSuggestions();
         unsubAppSettings();
         unsubNotifications();
@@ -664,6 +680,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           uploader_username: currentUser.name,
           status: SubmissionStatus.APPROVED,
           is_active: true,
+          is_featured: false,
           created_at: firebase.firestore.FieldValue.serverTimestamp(),
       };
       await templateDocRef.set(newTemplate);
@@ -735,6 +752,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // FIX: Use compat firestore API
     await db.collection("categories").doc(categoryId).delete();
   };
+
+    const addLanguage = async (name: string) => {
+        if (!currentUser || currentUser.role !== Role.ADMIN || !name.trim()) return;
+        await db.collection("languages").add({ name: name.trim() });
+    };
+
+    const deleteLanguage = async (languageId: string) => {
+        if (!currentUser || currentUser.role !== Role.ADMIN) return;
+        await db.collection("languages").doc(languageId).delete();
+    };
   
   const updateAppSettings = async (settings: Partial<AppSettings>) => {
       if (!currentUser || currentUser.role !== Role.ADMIN) return;
@@ -759,10 +786,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const value = {
-    users, templates, bookmarks, likes, savedDesigns, downloads, categories, suggestions, notifications, appSettings, currentUser, loading, notificationPermission,
+    users, templates, bookmarks, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, notificationPermission,
     login, signup, startSession, logout,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
-    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings, uploadAdminFile, sendNotification,
+    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, addLanguage, deleteLanguage, updateAppSettings, uploadAdminFile, sendNotification,
     installPromptEvent, triggerInstallPrompt
   };
 
