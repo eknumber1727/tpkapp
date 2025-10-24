@@ -17,7 +17,6 @@ const AdminEditTemplateScreen: React.FC = () => {
     const [tags, setTags] = useState('');
     const [ratios, setRatios] = useState<AspectRatio[]>(['4:5']);
     const [isActive, setIsActive] = useState(true);
-    const [isFeatured, setIsFeatured] = useState(false);
     
     const [pngFile, setPngFile] = useState<File | null>(null);
     const [bgFile, setBgFile] = useState<File | null>(null);
@@ -40,7 +39,6 @@ const AdminEditTemplateScreen: React.FC = () => {
                 setTags(foundTemplate.tags.join(', '));
                 setRatios(foundTemplate.ratios_supported);
                 setIsActive(foundTemplate.is_active);
-                setIsFeatured(foundTemplate.is_featured || false);
                 setPngPreview(foundTemplate.png_url);
                 setBgPreview(foundTemplate.bg_preview_url);
             }
@@ -119,7 +117,6 @@ const AdminEditTemplateScreen: React.FC = () => {
             ratios_supported: ratios,
             ratio_default: ratios[0] || '4:5',
             is_active: isActive,
-            is_featured: isFeatured,
         };
 
         const newFiles: { pngFile?: File, bgFile?: File, compositeFile?: Blob } = {};
@@ -231,10 +228,6 @@ const AdminEditTemplateScreen: React.FC = () => {
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#FF7A00] focus:ring-[#FFB800]" />
                             <span className="font-semibold text-[#2C3E50]">Is Active</span>
-                        </label>
-                         <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={isFeatured} onChange={e => setIsFeatured(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#FF7A00] focus:ring-[#FFB800]" />
-                            <span className="font-semibold text-[#2C3E50]">Featured (Show in Trending)</span>
                         </label>
                     </div>
                     

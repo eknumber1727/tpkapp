@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useLocation, Link } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import TemplateCard from '../../components/user/TemplateCard';
 import CategoryChips from '../../components/user/CategoryChips';
@@ -11,27 +11,32 @@ import TemplateCardSkeleton from '../../components/user/TemplateCardSkeleton';
 type SortOption = 'Latest' | 'Trending' | 'Most Liked';
 
 const TrendingTemplates: React.FC = () => {
-    const { templates, loading } = useData();
-    const trendingTemplates = useMemo(() => {
-        // FEATURE: Show only templates marked as "featured" by the admin
-        return templates.filter(t => t.is_active && t.is_featured);
-    }, [templates]);
+    const { templates, appSettings, loading } = useData();
+    
+    // FEATURE: Get featured templates based on the ordered list of IDs from app settings
+    const featuredTemplates = useMemo(() => {
+        const featuredIds = appSettings.featuredTemplates || [];
+        const templateMap = new Map(templates.map(t => [t.id, t]));
+        return featuredIds
+            .map(id => templateMap.get(id))
+            .filter((t): t is NonNullable<typeof t> => !!t && t.is_active);
+    }, [appSettings.featuredTemplates, templates]);
 
-    if (loading && trendingTemplates.length === 0) return null; // Don't show if loading and no items yet
-    if (!loading && trendingTemplates.length === 0) return null; // Don't show if there are no featured templates
+    if (loading && templates.length === 0) return null;
+    if (featuredTemplates.length === 0) return null;
 
     return (
         <div className="py-4">
             <h2 className="text-xl font-bold text-[#2C3E50] px-4 mb-3">Trending Now</h2>
             <div className="flex overflow-x-auto gap-4 px-4 pb-2 scrollbar-hide">
-                 {loading ? (
+                 {loading && templates.length === 0 ? (
                     Array.from({ length: 5 }).map((_, index) => (
                         <div key={index} className="w-48 flex-shrink-0">
                             <TemplateCardSkeleton />
                         </div>
                     ))
                 ) : (
-                    trendingTemplates.map(template => (
+                    featuredTemplates.map(template => (
                         <div key={template.id} className="w-48 flex-shrink-0">
                             <TemplateCard template={template} />
                         </div>
@@ -44,12 +49,25 @@ const TrendingTemplates: React.FC = () => {
 
 
 const UserHomeScreen: React.FC = () => {
-  const { templates, categories, languages, loading } = useData();
+  const { templates, categories, languages, templatesLoading, fetchMoreTemplates, hasMoreTemplates } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryName | 'All'>('All');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
   const [sortBy, setSortBy] = useState<SortOption>('Latest');
   const location = useLocation();
+
+  const observer = useRef<IntersectionObserver | null>(null);
+  const lastTemplateElementRef = useCallback(node => {
+    if (templatesLoading) return;
+    if (observer.current) observer.current.disconnect();
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMoreTemplates) {
+        fetchMoreTemplates();
+      }
+    });
+    if (node) observer.current.observe(node);
+  }, [templatesLoading, hasMoreTemplates, fetchMoreTemplates]);
+
 
   useEffect(() => {
     if (location.state?.selectedCategory) {
@@ -81,7 +99,6 @@ const UserHomeScreen: React.FC = () => {
         );
       });
     
-    // Now sort the filtered results
     switch (sortBy) {
         case 'Trending':
             return filtered.sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0));
@@ -92,6 +109,8 @@ const UserHomeScreen: React.FC = () => {
             return filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
   }, [templates, searchTerm, selectedCategory, selectedLanguage, sortBy]);
+  
+  const initialLoading = templatesLoading && templates.length === 0;
 
   return (
     <div className="flex flex-col">
@@ -131,33 +150,42 @@ const UserHomeScreen: React.FC = () => {
       </div>
 
       <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {loading ? (
-          <>
-            {Array.from({ length: 10 }).map((_, index) => (
-              <TemplateCardSkeleton key={index} />
-            ))}
-          </>
+        {initialLoading ? (
+            Array.from({ length: 12 }).map((_, index) => <TemplateCardSkeleton key={index} />)
         ) : (
           <>
-            {filteredAndSortedTemplates.map((template, index) => (
-              <React.Fragment key={template.id}>
-                <TemplateCard template={template} />
-                {index === 5 && (
-                  <div className="col-span-full">
-                    <AdBanner />
-                  </div>
-                )}
-              </React.Fragment>
-            ))}
+            {filteredAndSortedTemplates.map((template, index) => {
+              const isLastElement = filteredAndSortedTemplates.length === index + 1;
+              return (
+                  <React.Fragment key={template.id}>
+                    {isLastElement ? (
+                      <div ref={lastTemplateElementRef}><TemplateCard template={template} /></div>
+                    ) : (
+                      <TemplateCard template={template} />
+                    )}
+                    {index === 5 && (
+                      <div className="col-span-full">
+                        <AdBanner />
+                      </div>
+                    )}
+                  </React.Fragment>
+              )
+            })}
           </>
         )}
-        
-        {!loading && filteredAndSortedTemplates.length === 0 && (
-          <div className="col-span-full text-center py-20 bg-white rounded-[30px] mt-4">
-            <p className="text-[#7F8C8D]">No templates found. Try a different search!</p>
-          </div>
-        )}
       </div>
+
+      {templatesLoading && !initialLoading && (
+        <div className="col-span-full p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {Array.from({ length: 4 }).map((_, index) => <TemplateCardSkeleton key={index} />)}
+        </div>
+      )}
+
+      {!templatesLoading && templates.length === 0 && (
+        <div className="col-span-full text-center py-20 bg-white rounded-[30px] mt-4 mx-4">
+          <p className="text-[#7F8C8D]">No templates found. Try a different search!</p>
+        </div>
+      )}
     </div>
   );
 };

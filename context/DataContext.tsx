@@ -5,6 +5,7 @@ import type { User, Template, Bookmark, SavedDesign, Download, Category, Categor
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
 
+const TEMPLATES_PER_PAGE = 12;
 
 interface DataContextType {
   // State
@@ -21,6 +22,8 @@ interface DataContextType {
   appSettings: AppSettings;
   currentUser: User | null;
   loading: boolean;
+  templatesLoading: boolean;
+  hasMoreTemplates: boolean;
   notificationPermission: NotificationPermission;
 
   // Auth
@@ -28,6 +31,9 @@ interface DataContextType {
   signup: (name: string, email: string, pass: string) => Promise<User | void>;
   startSession: (user: User) => void;
   logout: () => void;
+  
+  // Templates
+  fetchMoreTemplates: () => void;
 
   // User Actions
   getTemplateById: (templateId: string) => Template | undefined;
@@ -80,6 +86,7 @@ const defaultAppSettings: AppSettings = {
     adSensePublisherId: '',
     adSenseSlotId: '',
     faviconUrl: '',
+    featuredTemplates: [],
 };
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -98,6 +105,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [installPromptEvent, setInstallPromptEvent] = useState<any | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  // State for pagination
+  const [lastTemplateVisible, setLastTemplateVisible] = useState<firebase.firestore.QueryDocumentSnapshot | null>(null);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [hasMoreTemplates, setHasMoreTemplates] = useState(true);
 
   useEffect(() => {
     if ('Notification' in window) {
@@ -129,36 +141,36 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
   };
 
-  // Safely convert Firestore Timestamp to ISO string
   const toISOStringSafe = (timestamp: any): string => {
-      // FIX: Use compat Timestamp type for instanceof check
       if (timestamp instanceof firebase.firestore.Timestamp) {
           return timestamp.toDate().toISOString();
       }
-      // Fallback for serverTimestamp pending writes
       if (timestamp === null || timestamp === undefined) {
         return new Date().toISOString();
       }
       return timestamp;
   }
   const toISOStringSafeOrNull = (timestamp: any): string | null => {
-      // FIX: Use compat Timestamp type for instanceof check
       if (timestamp instanceof firebase.firestore.Timestamp) {
           return timestamp.toDate().toISOString();
       }
       return null;
   }
 
+  // Auth listener
   useEffect(() => {
-    // FIX: Use compat library syntax for onAuthStateChanged
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
         if (user) {
-            // FIX: Use compat firestore API
             const userDocRef = db.collection("users").doc(user.uid);
             const userDoc = await userDocRef.get();
             if(userDoc.exists && auth.currentUser && auth.currentUser.uid === user.uid){
                 const userDataFromDb = userDoc.data() as UserFromFirestore;
-                // FIX: Explicitly create a plain object to prevent circular structure errors
+                if (!userDataFromDb.name || !userDataFromDb.creator_id) {
+                  // Handle case of user created via Google but DB doc not ready
+                  // Or some other inconsistent state. For now, we log out.
+                  await auth.signOut();
+                  return;
+                }
                 const plainUserObject: User = { 
                     id: user.uid, 
                     name: userDataFromDb.name,
@@ -183,12 +195,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
   
+  // Initial data loading (non-paginated data)
   useEffect(() => {
-    // FIX: Use compat firestore API
     const unsubUsers = db.collection("users").onSnapshot((snapshot) => {
         setUsers(snapshot.docs.map(doc => {
             const data = doc.data();
-            // FIX: Explicitly create a plain object to prevent circular structure errors
             return {
                 id: doc.id,
                 name: data.name,
@@ -203,119 +214,28 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
     }, (error) => console.error("Error fetching users:", error));
 
-    const unsubTemplates = db.collection("templates").onSnapshot((snapshot) => {
-        const fetchedTemplates = snapshot.docs.map(doc => {
-            const data = doc.data();
-            // FIX: Explicitly create a plain object
-            return {
-                id: doc.id,
-                title: data.title,
-                category: data.category,
-                language: data.language,
-                tags: data.tags,
-                png_url: data.png_url,
-                bg_preview_url: data.bg_preview_url,
-                composite_preview_url: data.composite_preview_url,
-                status: data.status,
-                is_active: data.is_active,
-                is_featured: data.is_featured || false,
-                ratio_default: data.ratio_default,
-                ratios_supported: data.ratios_supported,
-                uploader_id: data.uploader_id,
-                uploader_username: data.uploader_username,
-                created_at: toISOStringSafe(data.created_at),
-                downloadCount: 0, // Initialize download count
-                likeCount: 0 // Initialize like count
-            } as Template;
-        });
-
-        // Fetch all downloads and likes to calculate counts
-        const downloadsPromise = db.collection("downloads").get();
-        const likesPromise = db.collection("likes").get();
-
-        Promise.all([downloadsPromise, likesPromise]).then(([downloadSnapshot, likeSnapshot]) => {
-            const downloadCounts = new Map<string, number>();
-            downloadSnapshot.docs.forEach(doc => {
-                const templateId = doc.data().template_id;
-                downloadCounts.set(templateId, (downloadCounts.get(templateId) || 0) + 1);
-            });
-
-            const likeCounts = new Map<string, number>();
-            likeSnapshot.docs.forEach(doc => {
-                const templateId = doc.data().template_id;
-                likeCounts.set(templateId, (likeCounts.get(templateId) || 0) + 1);
-            });
-
-            // Attach counts to templates
-            const templatesWithCounts = fetchedTemplates.map(template => ({
-                ...template,
-                downloadCount: downloadCounts.get(template.id) || 0,
-                likeCount: likeCounts.get(template.id) || 0
-            }));
-            
-            setTemplates(templatesWithCounts);
-        });
-
-    }, (error) => console.error("Error fetching templates:", error));
-
     const unsubCategories = db.collection("categories").onSnapshot((snapshot) => {
-        setCategories(snapshot.docs.map(doc => {
-            const data = doc.data();
-            // FIX: Explicitly create a plain object
-            return { 
-                id: doc.id,
-                name: data.name
-            } as Category;
-        }));
+        setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
     }, (error) => console.error("Error fetching categories:", error));
 
     const unsubLanguages = db.collection("languages").onSnapshot((snapshot) => {
-        setLanguages(snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                name: data.name
-            } as Language;
-        }));
+        setLanguages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Language)));
     }, (error) => console.error("Error fetching languages:", error));
 
-    const unsubSuggestions = db.collection("suggestions").onSnapshot((snapshot) => {
-        setSuggestions(snapshot.docs.map(doc => {
-            const data = doc.data();
-            // FIX: Explicitly create a plain object
-            return {
-                id: doc.id,
-                user_id: data.user_id,
-                user_name: data.user_name,
-                text: data.text,
-                created_at: toISOStringSafe(data.created_at)
-            } as Suggestion;
-        }));
+    const unsubSuggestions = db.collection("suggestions").orderBy("created_at", "desc").onSnapshot((snapshot) => {
+        setSuggestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Suggestion)));
     }, (error) => console.error("Error fetching suggestions:", error));
 
      const unsubNotifications = db.collection("notifications").orderBy("sent_at", "desc").onSnapshot((snapshot) => {
-        setNotifications(snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                title: data.title,
-                body: data.body,
-                sent_at: toISOStringSafe(data.sent_at),
-            } as Notification;
-        }));
+        setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), sent_at: toISOStringSafe(doc.data().sent_at) } as Notification)));
     }, (error) => console.error("Error fetching notifications:", error));
 
     const unsubAppSettings = db.collection("settings").doc("app").onSnapshot((doc) => {
         if (doc.exists) {
             const data = doc.data() as Partial<AppSettings>;
             setAppSettings({
-                aboutUs: data.aboutUs || '',
-                terms: data.terms || '',
-                contactEmail: data.contactEmail || '',
-                adsEnabled: data.adsEnabled || false,
-                adSensePublisherId: data.adSensePublisherId || '',
-                adSenseSlotId: data.adSenseSlotId || '',
-                faviconUrl: data.faviconUrl || '',
+                ...defaultAppSettings,
+                ...data,
             });
         } else {
              setAppSettings(defaultAppSettings);
@@ -324,7 +244,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     return () => {
         unsubUsers();
-        unsubTemplates();
         unsubCategories();
         unsubLanguages();
         unsubSuggestions();
@@ -333,84 +252,123 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
   
-    useEffect(() => {
-        if (!currentUser) {
-            setBookmarks([]);
-            setSavedDesigns([]);
-            setDownloads([]);
-            setLikes([]);
-            return;
-        }
-        
-        // FIX: Use compat firestore API
-        const qBookmarks = db.collection("bookmarks").where("user_id", "==", currentUser.id);
-        const unsubBookmarks = qBookmarks.onSnapshot((snapshot) => {
-            setBookmarks(snapshot.docs.map(doc => {
-                const data = doc.data();
-                // FIX: Explicitly create a plain object
-                return {
-                    id: doc.id,
-                    user_id: data.user_id,
-                    template_id: data.template_id,
-                    created_at: toISOStringSafe(data.created_at)
-                } as Bookmark;
-            }));
-        });
+  // Per-user data listeners
+  useEffect(() => {
+    if (!currentUser) {
+        setBookmarks([]);
+        setSavedDesigns([]);
+        setDownloads([]);
+        setLikes([]);
+        return;
+    }
+    
+    const unsubBookmarks = db.collection("bookmarks").where("user_id", "==", currentUser.id).onSnapshot((snapshot) => {
+        setBookmarks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Bookmark)));
+    });
 
-        const qLikes = db.collection("likes").where("user_id", "==", currentUser.id);
-        const unsubLikes = qLikes.onSnapshot((snapshot) => {
-            setLikes(snapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    id: doc.id,
-                    user_id: data.user_id,
-                    template_id: data.template_id,
-                    created_at: toISOStringSafe(data.created_at)
-                } as Like;
-            }));
-        });
+    const unsubLikes = db.collection("likes").where("user_id", "==", currentUser.id).onSnapshot((snapshot) => {
+        setLikes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Like)));
+    });
 
-        const qDesigns = db.collection("savedDesigns").where("user_id", "==", currentUser.id);
-        const unsubDesigns = qDesigns.onSnapshot((snapshot) => {
-            setSavedDesigns(snapshot.docs.map(doc => {
-                const data = doc.data();
-                // FIX: Explicitly create a plain object
-                return {
-                    id: doc.id,
-                    user_id: data.user_id,
-                    template_id: data.template_id,
-                    ratio: data.ratio,
-                    layers_json: data.layers_json,
-                    updated_at: toISOStringSafe(data.updated_at)
-                } as SavedDesign;
-            }));
-        });
-        
-        const qDownloads = db.collection("downloads").where("user_id", "==", currentUser.id);
-        const unsubDownloads = qDownloads.onSnapshot((snapshot) => {
-            setDownloads(snapshot.docs.map(doc => {
-                const data = doc.data();
-                // FIX: Explicitly create a plain object
-                return {
-                    id: doc.id,
-                    user_id: data.user_id,
-                    template_id: data.template_id,
-                    design_id: data.design_id,
-                    file_url: data.file_url,
-                    local_only: data.local_only,
-                    timestamp: toISOStringSafe(data.timestamp),
-                    thumbnail: data.thumbnail
-                } as Download;
-            }));
-        });
+    const unsubDesigns = db.collection("savedDesigns").where("user_id", "==", currentUser.id).onSnapshot((snapshot) => {
+        setSavedDesigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), updated_at: toISOStringSafe(doc.data().updated_at) } as SavedDesign)));
+    });
+    
+    const unsubDownloads = db.collection("downloads").where("user_id", "==", currentUser.id).onSnapshot((snapshot) => {
+        setDownloads(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), timestamp: toISOStringSafe(doc.data().timestamp) } as Download)));
+    });
 
-        return () => {
-            unsubBookmarks();
-            unsubDesigns();
-            unsubDownloads();
-            unsubLikes();
-        };
-    }, [currentUser]);
+    return () => {
+        unsubBookmarks();
+        unsubDesigns();
+        unsubDownloads();
+        unsubLikes();
+    };
+  }, [currentUser]);
+
+  // *** PERFORMANCE: Initial Template Fetch (First Page) ***
+  useEffect(() => {
+      setTemplatesLoading(true);
+      const q = db.collection("templates").orderBy("created_at", "desc").limit(TEMPLATES_PER_PAGE);
+
+      q.get().then(async (snapshot) => {
+          if (snapshot.empty) {
+              setTemplates([]);
+              setHasMoreTemplates(false);
+              setTemplatesLoading(false);
+              return;
+          }
+
+          const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+          setLastTemplateVisible(lastVisible);
+          setHasMoreTemplates(snapshot.docs.length === TEMPLATES_PER_PAGE);
+
+          const fetchedTemplates = snapshot.docs.map(doc => ({
+              id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
+          }));
+          
+          // This part is still slow but better than a listener.
+          const templatesWithCounts = await calculateCountsFor(fetchedTemplates);
+          setTemplates(templatesWithCounts);
+          setTemplatesLoading(false);
+      });
+  }, []);
+  
+  const calculateCountsFor = async (templatesToProcess: any[]): Promise<Template[]> => {
+      const downloadsPromise = db.collection("downloads").get();
+      const likesPromise = db.collection("likes").get();
+
+      const [downloadSnapshot, likeSnapshot] = await Promise.all([downloadsPromise, likesPromise]);
+      
+      const downloadCounts = new Map<string, number>();
+      downloadSnapshot.docs.forEach(doc => {
+          const templateId = doc.data().template_id;
+          downloadCounts.set(templateId, (downloadCounts.get(templateId) || 0) + 1);
+      });
+
+      const likeCounts = new Map<string, number>();
+      likeSnapshot.docs.forEach(doc => {
+          const templateId = doc.data().template_id;
+          likeCounts.set(templateId, (likeCounts.get(templateId) || 0) + 1);
+      });
+      
+      return templatesToProcess.map(template => ({
+          ...template,
+          downloadCount: downloadCounts.get(template.id) || 0,
+          likeCount: likeCounts.get(template.id) || 0
+      }));
+  };
+
+  const fetchMoreTemplates = async () => {
+      if (!lastTemplateVisible || !hasMoreTemplates || templatesLoading) return;
+      
+      setTemplatesLoading(true);
+
+      const q = db.collection("templates")
+          .orderBy("created_at", "desc")
+          .startAfter(lastTemplateVisible)
+          .limit(TEMPLATES_PER_PAGE);
+
+      const snapshot = await q.get();
+
+      if (snapshot.empty) {
+          setHasMoreTemplates(false);
+          setTemplatesLoading(false);
+          return;
+      }
+
+      const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+      setLastTemplateVisible(lastVisible);
+      setHasMoreTemplates(snapshot.docs.length === TEMPLATES_PER_PAGE);
+      
+      const newTemplates = snapshot.docs.map(doc => ({
+          id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
+      }));
+
+      const newTemplatesWithCounts = await calculateCountsFor(newTemplates);
+      setTemplates(prev => [...prev, ...newTemplatesWithCounts]);
+      setTemplatesLoading(false);
+  };
 
   const signup = async (name: string, email: string, pass: string): Promise<User | void> => {
     const userCredential = await auth.createUserWithEmailAndPassword(email, pass);
@@ -482,7 +440,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
-    // FIX: Use compat library syntax for signOut
     await auth.signOut();
     setCurrentUser(null);
     localStorage.removeItem('timepass-katta-user');
@@ -500,10 +457,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const existingBookmark = bookmarks.find(b => b.template_id === templateId);
 
     if (existingBookmark) {
-      // FIX: Use compat firestore API
       await db.collection("bookmarks").doc(existingBookmark.id).delete();
     } else {
-      // FIX: Use compat firestore API
       await db.collection("bookmarks").add({
         user_id: currentUser.id,
         template_id: templateId,
@@ -537,10 +492,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const saveDesign = async (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => {
     if (!currentUser) return;
     
-    // CRITICAL BUG FIX: Separate logic for create (addDoc) and update (setDoc)
     if (designData.id) {
-        // This is an UPDATE
-        // FIX: Use compat firestore API
         const docRef = db.collection("savedDesigns").doc(designData.id);
         const dataToSave = {
             ...designData,
@@ -549,21 +501,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         await docRef.set(dataToSave, { merge: true });
     } else {
-        // This is a CREATE - remove the undefined 'id' field
         const { id, ...restOfData } = designData; 
         const dataToSave = {
             ...restOfData,
             user_id: currentUser.id,
             updated_at: firebase.firestore.FieldValue.serverTimestamp(),
         };
-        // FIX: Use compat firestore API
         await db.collection("savedDesigns").add(dataToSave);
     }
   };
   
   const addDownload = async (downloadData: Omit<Download, 'id'|'user_id'|'timestamp'>) => {
       if(!currentUser) return;
-      // FIX: Use compat firestore API
       await db.collection("downloads").add({
           ...downloadData,
           user_id: currentUser.id,
@@ -574,7 +523,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
     if(!currentUser || currentUser.role !== Role.USER) return;
     
-    // FIX: Use compat firestore API
     const templateDocRef = db.collection('templates').doc();
     const templateId = templateDocRef.id;
 
@@ -612,14 +560,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
       }
       
-      // FIX: Use compat firestore API
       const userDocRef = db.collection("users").doc(currentUser.id);
       await userDocRef.update({ name: newUsername, lastUsernameChangeAt: firebase.firestore.FieldValue.serverTimestamp() });
   }
 
   const submitSuggestion = async (text: string) => {
       if (!currentUser || !text.trim()) return;
-      // FIX: Use compat firestore API
       await db.collection("suggestions").add({
           user_id: currentUser.id,
           user_name: currentUser.name,
@@ -662,7 +608,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Admin functions
   const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
-      // FIX: Use compat firestore API
       const templateDocRef = db.collection('templates').doc();
       const templateId = templateDocRef.id;
 
@@ -680,7 +625,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           uploader_username: currentUser.name,
           status: SubmissionStatus.APPROVED,
           is_active: true,
-          is_featured: false,
           created_at: firebase.firestore.FieldValue.serverTimestamp(),
       };
       await templateDocRef.set(newTemplate);
@@ -696,12 +640,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if(newFiles?.bgFile) {
           updateData.bg_preview_url = await uploadFile(newFiles.bgFile, `templates/${templateId}/bg_preview.jpg`);
       }
-      // CRITICAL BUG FIX: Handle composite file update
       if(newFiles?.compositeFile) {
           updateData.composite_preview_url = await uploadFile(newFiles.compositeFile, `templates/${templateId}/composite_preview.jpg`);
       }
       
-      // FIX: Use compat firestore API
       await db.collection("templates").doc(templateId).update(updateData);
   };
 
@@ -709,30 +651,25 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
     const template = templates.find(t => t.id === templateId);
     if(template){
-        // FIX: Use compat storage API
         try { await storage.ref(`templates/${templateId}/overlay.png`).delete(); } catch(e) { console.error(e); }
         try { await storage.ref(`templates/${templateId}/bg_preview.jpg`).delete(); } catch(e) { console.error(e); }
         try { await storage.ref(`templates/${templateId}/composite_preview.jpg`).delete(); } catch(e) { console.error(e); }
     }
-    // FIX: Use compat firestore API
     await db.collection("templates").doc(templateId).delete();
   };
 
   const approveTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
-    // FIX: Use compat firestore API
     await db.collection("templates").doc(templateId).update({ status: SubmissionStatus.APPROVED, is_active: true });
   };
 
   const rejectTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
-    // FIX: Use compat firestore API
     await db.collection("templates").doc(templateId).update({ status: SubmissionStatus.REJECTED, is_active: false });
   };
   
   const addCategory = async (name: CategoryName) => {
     if (!currentUser || currentUser.role !== Role.ADMIN || !name.trim()) return;
-    // FIX: Use compat firestore API
     await db.collection("categories").add({ name: name.trim() });
   };
 
@@ -742,14 +679,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const categoryToDelete = categories.find(c => c.id === categoryId);
     if (!categoryToDelete) return;
     
-    // FIX: Use compat firestore API
     const q = db.collection("templates").where("category", "==", categoryToDelete.name);
     const querySnapshot = await q.get();
     if (!querySnapshot.empty) {
         throw new Error('This category is currently in use by one or more templates and cannot be deleted.');
     }
 
-    // FIX: Use compat firestore API
     await db.collection("categories").doc(categoryId).delete();
   };
 
@@ -765,7 +700,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const updateAppSettings = async (settings: Partial<AppSettings>) => {
       if (!currentUser || currentUser.role !== Role.ADMIN) return;
-      // FIX: Use compat firestore API
       await db.collection("settings").doc("app").set(settings, { merge: true });
   }
   
@@ -786,8 +720,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const value = {
-    users, templates, bookmarks, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, notificationPermission,
+    users, templates, bookmarks, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
     login, signup, startSession, logout,
+    fetchMoreTemplates,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
     adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, addLanguage, deleteLanguage, updateAppSettings, uploadAdminFile, sendNotification,
     installPromptEvent, triggerInstallPrompt

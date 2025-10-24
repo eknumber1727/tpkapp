@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { SubmissionStatus, Template } from '../../types';
-import { SearchIcon, StarIcon } from '../../components/shared/Icons';
+import { SearchIcon } from '../../components/shared/Icons';
 import ConfirmationModal from '../../components/shared/ConfirmationModal';
 
 const getStatusChipClass = (status: SubmissionStatus) => {
@@ -16,7 +16,7 @@ const getStatusChipClass = (status: SubmissionStatus) => {
 }
 
 const AdminTemplateManagerScreen: React.FC = () => {
-    const { templates, deleteTemplate, updateTemplate } = useData();
+    const { templates, deleteTemplate } = useData();
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -42,16 +42,6 @@ const AdminTemplateManagerScreen: React.FC = () => {
         setIsModalOpen(true);
         setSuccessMessage('');
         setErrorMessage('');
-    };
-    
-    const handleToggleFeatured = async (template: Template) => {
-        try {
-            await updateTemplate(template.id, { is_featured: !template.is_featured });
-             setSuccessMessage(`"${template.title}" ${!template.is_featured ? 'is now featured.' : 'is no longer featured.'}`);
-        } catch(e: any) {
-            setErrorMessage(`Failed to update: ${e.message}`);
-        }
-        setTimeout(() => { setSuccessMessage(''); setErrorMessage(''); }, 3000);
     };
 
     const handleConfirmDelete = async () => {
@@ -109,8 +99,7 @@ const AdminTemplateManagerScreen: React.FC = () => {
                         <tbody>
                             {filteredTemplates.map(template => (
                                 <tr key={template.id} className="border-b last:border-b-0">
-                                    <td className="p-4 text-[#2C3E50] flex items-center gap-2">
-                                        <StarIcon className={`w-5 h-5 ${template.is_featured ? 'text-yellow-400' : 'text-gray-300'}`} isFilled={template.is_featured} />
+                                    <td className="p-4 text-[#2C3E50]">
                                         {template.title}
                                     </td>
                                     <td className="p-4 text-[#2C3E50]">{template.category}</td>
@@ -121,7 +110,6 @@ const AdminTemplateManagerScreen: React.FC = () => {
                                         </span>
                                     </td>
                                     <td className="p-4 space-x-4">
-                                        <button onClick={() => handleToggleFeatured(template)} className={`text-sm ${template.is_featured ? 'text-yellow-500' : 'text-gray-500' } hover:underline`}>Feature</button>
                                         <button onClick={() => navigate(`/templates/${template.id}/edit`)} className="text-sm text-blue-600 hover:underline">Edit</button>
                                         <button onClick={() => openDeleteModal(template)} className="text-sm text-red-600 hover:underline">Delete</button>
                                     </td>
@@ -136,20 +124,16 @@ const AdminTemplateManagerScreen: React.FC = () => {
                     {filteredTemplates.map(template => (
                         <div key={template.id} className="bg-white rounded-[20px] shadow-sm p-4">
                             <div className="flex justify-between items-start">
-                                 <div className="flex items-start gap-2">
-                                    <StarIcon className={`w-5 h-5 mt-1 flex-shrink-0 ${template.is_featured ? 'text-yellow-400' : 'text-gray-300'}`} isFilled={template.is_featured} />
-                                    <div>
-                                        <h3 className="font-bold text-[#2C3E50]">{template.title}</h3>
-                                        <p className="text-sm text-[#7F8C8D]">{template.category}</p>
-                                        <p className="text-xs text-[#7F8C8D]">@{template.uploader_username}</p>
-                                    </div>
+                                 <div>
+                                    <h3 className="font-bold text-[#2C3E50]">{template.title}</h3>
+                                    <p className="text-sm text-[#7F8C8D]">{template.category}</p>
+                                    <p className="text-xs text-[#7F8C8D]">@{template.uploader_username}</p>
                                 </div>
                                 <span className={`px-2 py-1 text-xs rounded-full capitalize ${getStatusChipClass(template.status)}`}>
                                     {template.status}
                                 </span>
                             </div>
                             <div className="mt-4 border-t pt-2 flex justify-end space-x-4">
-                                <button onClick={() => handleToggleFeatured(template)} className={`text-sm ${template.is_featured ? 'text-yellow-500' : 'text-gray-500' } hover:underline`}>Feature</button>
                                 <button onClick={() => navigate(`/templates/${template.id}/edit`)} className="text-sm text-blue-600 hover:underline">Edit</button>
                                 <button onClick={() => openDeleteModal(template)} className="text-sm text-red-600 hover:underline">Delete</button>
                             </div>

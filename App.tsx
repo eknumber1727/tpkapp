@@ -28,6 +28,7 @@ import AdminSuggestionsScreen from './screens/admin/AdminSuggestionsScreen';
 import AdminNotificationsManagerScreen from './screens/admin/AdminNotificationsManagerScreen';
 import AdminAppSettingsManagerScreen from './screens/admin/AdminAppSettingsManagerScreen';
 import AdminLanguageManagerScreen from './screens/admin/AdminLanguageManagerScreen';
+import AdminFeaturedManagerScreen from './screens/admin/AdminFeaturedManagerScreen';
 
 const UserRoutes = () => (
   <UserLayout>
@@ -61,6 +62,7 @@ const AdminRoutes = () => (
       <Route path="/suggestions" element={<AdminSuggestionsScreen />} />
       <Route path="/notifications" element={<AdminNotificationsManagerScreen />} />
       <Route path="/settings" element={<AdminAppSettingsManagerScreen />} />
+      <Route path="/featured" element={<AdminFeaturedManagerScreen />} />
       <Route path="/create-template" element={<UserCreateTemplateScreen />} />
       <Route path="/templates/:templateId/edit" element={<AdminEditTemplateScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />

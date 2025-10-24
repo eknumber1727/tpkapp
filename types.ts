@@ -70,7 +70,6 @@ export interface Template {
   
   status: SubmissionStatus;
   is_active: boolean;
-  is_featured?: boolean;
   
   ratio_default: AspectRatio;
   ratios_supported: AspectRatio[];
@@ -151,6 +150,7 @@ export interface AppSettings {
   adSensePublisherId: string;
   adSenseSlotId: string;
   faviconUrl: string;
+  featuredTemplates?: string[];
 }
 
 export interface Notification {

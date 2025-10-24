@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { LogoutIcon, MenuIcon, XIcon, DashboardIcon, TemplateManagerIcon, SubmissionsIcon, CategoryIcon, SuggestionIcon, BellIcon, SettingsIcon, LanguageIcon } from '../../components/shared/Icons';
+import { LogoutIcon, MenuIcon, XIcon, DashboardIcon, TemplateManagerIcon, SubmissionsIcon, CategoryIcon, SuggestionIcon, BellIcon, SettingsIcon, LanguageIcon, StarIcon } from '../../components/shared/Icons';
 
 const NavLinks: React.FC<{ onLinkClick?: () => void }> = ({ onLinkClick }) => {
     const activeClass = "bg-orange-50 text-[#FF7A00]";
@@ -19,6 +19,10 @@ const NavLinks: React.FC<{ onLinkClick?: () => void }> = ({ onLinkClick }) => {
             <NavLink to="/templates" className={getLinkClass} onClick={onLinkClick}>
                 <TemplateManagerIcon className="w-6 h-6" />
                 <span>Templates</span>
+            </NavLink>
+            <NavLink to="/featured" className={getLinkClass} onClick={onLinkClick}>
+                <StarIcon className="w-6 h-6" />
+                <span>Featured Manager</span>
             </NavLink>
             <NavLink to="/submissions" className={getLinkClass} onClick={onLinkClick}>
                 <SubmissionsIcon className="w-6 h-6" />
