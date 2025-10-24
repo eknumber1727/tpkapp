@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Template, Bookmark, SavedDesign, Download, Role, SubmissionStatus, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, AppNotification, Like } from '../types';
+import { User, Template, Bookmark, SavedDesign, Download, Role, SubmissionStatus, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like } from '../types';
 // FIX: Import firebase default for compat types, and named exports for service instances.
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,7 +15,7 @@ interface DataContextType {
   downloads: Download[];
   categories: Category[];
   suggestions: Suggestion[];
-  notifications: AppNotification[];
+  notifications: Notification[];
   appSettings: AppSettings;
   currentUser: User | null;
   loading: boolean;
@@ -77,7 +77,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>({aboutUs: '', terms: '', contactEmail: ''});
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -272,7 +272,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 title: data.title,
                 body: data.body,
                 sent_at: toISOStringSafe(data.sent_at),
-            } as AppNotification;
+            } as Notification;
         }));
     }, (error) => console.error("Error fetching notifications:", error));
 

@@ -137,7 +137,7 @@ export interface AppSettings {
   contactEmail: string;
 }
 
-export interface AppNotification {
+export interface Notification {
   id: string;
   title: string;
   body: string;
