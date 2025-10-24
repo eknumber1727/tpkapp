@@ -186,6 +186,7 @@ const UserProfileScreen: React.FC = () => {
       
       {/* Links */}
       <div className="bg-white p-4 rounded-[30px] shadow-sm divide-y">
+          <Link to="/notifications" className="block p-3 text-[#2C3E50] font-semibold">Notifications</Link>
           <Link to="/about" className="block p-3 text-[#2C3E50] font-semibold">About Us</Link>
           <Link to="/terms" className="block p-3 text-[#2C3E50] font-semibold">Terms & Conditions</Link>
           <Link to="/contact" className="block p-3 text-[#2C3E50] font-semibold">Contact Us</Link>

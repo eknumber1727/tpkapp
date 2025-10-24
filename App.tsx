@@ -15,6 +15,7 @@ import AboutUsScreen from './screens/user/AboutUsScreen';
 import TermsScreen from './screens/user/TermsScreen';
 import ContactUsScreen from './screens/user/ContactUsScreen';
 import CreatorProfileScreen from './screens/user/CreatorProfileScreen';
+import UserNotificationsScreen from './screens/user/UserNotificationsScreen';
 
 import AdminDashboardScreen from './screens/admin/AdminDashboardScreen';
 import AdminTemplateManagerScreen from './screens/admin/AdminTemplateManagerScreen';
@@ -42,6 +43,7 @@ const UserRoutes = () => (
       <Route path="/about" element={<AboutUsScreen />} />
       <Route path="/terms" element={<TermsScreen />} />
       <Route path="/contact" element={<ContactUsScreen />} />
+      <Route path="/notifications" element={<UserNotificationsScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   </UserLayout>
