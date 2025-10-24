@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useData } from './context/DataContext';
 
@@ -27,6 +27,8 @@ import AdminCategoryManagerScreen from './screens/admin/AdminCategoryManagerScre
 import AdminAppSettingsManagerScreen from './screens/admin/AppSettingsManagerScreen';
 import AdminSuggestionsScreen from './screens/admin/AdminSuggestionsScreen';
 import AdminNotificationsManagerScreen from './screens/admin/AdminNotificationsManagerScreen';
+// FIX: Import VerifyEmailScreen to handle unverified users.
+import VerifyEmailScreen from './screens/VerifyEmailScreen';
 
 const UserRoutes = () => (
   <UserLayout>
@@ -67,20 +69,67 @@ const AdminRoutes = () => (
 );
 
 const App: React.FC = () => {
-  const { currentUser } = useData();
+  const { currentUser, appSettings } = useData();
 
-  return (
-    <HashRouter>
-      {!currentUser ? (
+  useEffect(() => {
+    // Dynamically load Google AdSense script if enabled
+    if (appSettings.adsEnabled && appSettings.adSensePublisherId) {
+      const scriptId = 'adsense-script';
+      if (document.getElementById(scriptId)) {
+        return; // Script already added
+      }
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${appSettings.adSensePublisherId}`;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      document.head.appendChild(script);
+    }
+  }, [appSettings.adsEnabled, appSettings.adSensePublisherId]);
+
+  useEffect(() => {
+    const faviconUrl = appSettings.faviconUrl;
+    if (faviconUrl) {
+      let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = faviconUrl;
+    }
+  }, [appSettings.faviconUrl]);
+
+  const renderRoutes = () => {
+    if (!currentUser) {
+      return (
         <Routes>
           <Route path="/login" element={<LoginScreen />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
-      ) : currentUser.role === Role.ADMIN ? (
-        <AdminRoutes />
-      ) : (
-        <UserRoutes />
-      )}
+      );
+    }
+
+    // FIX: Add check for email verification.
+    if (!currentUser.emailVerified) {
+      return (
+        <Routes>
+          <Route path="/verify-email" element={<VerifyEmailScreen />} />
+          <Route path="*" element={<Navigate to="/verify-email" replace />} />
+        </Routes>
+      );
+    }
+    
+    if (currentUser.role === Role.ADMIN) {
+        return <AdminRoutes />;
+    }
+
+    return <UserRoutes />;
+  };
+
+  return (
+    <HashRouter>
+      {renderRoutes()}
     </HashRouter>
   );
 };

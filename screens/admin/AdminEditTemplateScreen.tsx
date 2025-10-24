@@ -45,6 +45,14 @@ const AdminEditTemplateScreen: React.FC = () => {
         }
     }, [templateId, getTemplateById]);
 
+     // Effect to clean up any newly created blob URLs when the component unmounts or previews change
+    useEffect(() => {
+        return () => {
+            if (pngPreview && pngPreview.startsWith('blob:')) URL.revokeObjectURL(pngPreview);
+            if (bgPreview && bgPreview.startsWith('blob:')) URL.revokeObjectURL(bgPreview);
+        };
+    }, [pngPreview, bgPreview]);
+
     useEffect(() => {
         const currentPng = pngPreview;
         const currentBg = bgPreview;
@@ -55,11 +63,11 @@ const AdminEditTemplateScreen: React.FC = () => {
 
             const bgImage = new Image();
             bgImage.crossOrigin = 'anonymous';
-            bgImage.src = currentBg;
+            bgImage.src = currentBg.startsWith('blob:') ? currentBg : `/api/images${new URL(currentBg).pathname}`;
             bgImage.onload = () => {
                 const pngImage = new Image();
                 pngImage.crossOrigin = 'anonymous';
-                pngImage.src = currentPng;
+                pngImage.src = currentPng.startsWith('blob:') ? currentPng : `/api/images${new URL(currentPng).pathname}`;
                 pngImage.onload = () => {
                     const previewWidth = 400;
                     canvas.width = previewWidth;
@@ -80,15 +88,8 @@ const AdminEditTemplateScreen: React.FC = () => {
         if (file) {
             setError('');
             setFile(file);
-            const newPreviewUrl = URL.createObjectURL(file);
-            
-            // Clean up old blob URL
-            setPreview(prev => {
-                if (prev && prev.startsWith('blob:')) {
-                    URL.revokeObjectURL(prev);
-                }
-                return newPreviewUrl;
-            });
+            // Create a new blob URL and let the useEffect cleanup handle the old one.
+            setPreview(URL.createObjectURL(file));
         }
     };
     

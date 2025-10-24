@@ -10,4 +10,4 @@ export const ASPECT_RATIOS: AspectRatio[] = [
 
 export const LANGUAGES: string[] = ['English', 'Hindi', 'Marathi'];
 
-export const APP_NAME = "TIMEPASS KATTA APP";
+export const APP_NAME = "www.timepasskatta.app";

@@ -1,4 +1,6 @@
-import { Timestamp } from 'firebase/firestore';
+// FIX: Use Firebase compat Timestamp type to align with the rest of the project.
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/firestore';
 
 export enum Role {
   USER = 'user',
@@ -24,12 +26,14 @@ export type AspectRatio = '4:5' | '1:1' | '9:16' | '16:9' | '3:4';
 export interface UserFromFirestore {
   id: string;
   name: string;
+  email: string;
+  emailVerified: boolean;
   photo_url: string;
   role: Role;
   password?: string;
   creator_id: string;
-  created_at: Timestamp;
-  lastUsernameChangeAt: Timestamp | null;
+  created_at: firebase.firestore.Timestamp;
+  lastUsernameChangeAt: firebase.firestore.Timestamp | null;
   fcmTokens?: string[];
 }
 
@@ -37,6 +41,8 @@ export interface UserFromFirestore {
 export interface User {
   id: string; // user email or UUID
   name: string;
+  email: string;
+  emailVerified: boolean;
   photo_url: string;
   role: Role;
   password?: string;
@@ -135,6 +141,10 @@ export interface AppSettings {
   aboutUs: string;
   terms: string;
   contactEmail: string;
+  adsEnabled: boolean;
+  adSensePublisherId: string;
+  adSenseSlotId: string;
+  faviconUrl: string;
 }
 
 export interface Notification {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { APP_NAME } from '../constants';
 import { Role, User } from '../types';
+import { GoogleIcon } from '../components/shared/Icons';
 
 const LoginScreen: React.FC = () => {
   const [isLoginView, setIsLoginView] = useState(true);
@@ -15,10 +16,11 @@ const LoginScreen: React.FC = () => {
   
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
 
   const navigate = useNavigate();
-  const { signup, login, startSession } = useData();
+  const { signup, login, loginWithGoogle, startSession } = useData();
 
   const handleCredentialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,13 +40,15 @@ const LoginScreen: React.FC = () => {
       } else {
         // Sign Up
         await signup(name, email, password);
-        // The onAuthStateChanged listener in DataContext will handle login after signup
+        // Immediately log the new user in and redirect
+        const user = await login(email, password);
+        startSession(user);
         navigate('/');
       }
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         setError('This email is already registered. Please login.');
-      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
         setError('Invalid email or password.');
       }
       else {
@@ -52,6 +56,19 @@ const LoginScreen: React.FC = () => {
       }
     } finally {
         setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in with Google.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
   
@@ -83,65 +100,83 @@ const LoginScreen: React.FC = () => {
         </p>
 
         {step === 'credentials' ? (
-          <form onSubmit={handleCredentialSubmit}>
-            {!isLoginView && (
-                 <div className="mb-4">
-                  <label htmlFor="name" className="block text-sm font-medium text-[#2C3E50] mb-1">
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
-                    placeholder="e.g., John Doe"
-                    required
-                  />
-                </div>
-            )}
-            <div className="mb-4">
-              <label htmlFor="email" className="block text-sm font-medium text-[#2C3E50] mb-1">
-                Email Address
-              </label>
-              <input
-                type="email"
-                id="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
-                placeholder="e.g., user@example.com"
-                required
-              />
+          <div>
+            <form onSubmit={handleCredentialSubmit}>
+              {!isLoginView && (
+                   <div className="mb-4">
+                    <label htmlFor="name" className="block text-sm font-medium text-[#2C3E50] mb-1">
+                      Name
+                    </label>
+                    <input
+                      type="text"
+                      id="name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
+                      placeholder="e.g., John Doe"
+                      required
+                    />
+                  </div>
+              )}
+              <div className="mb-4">
+                <label htmlFor="email" className="block text-sm font-medium text-[#2C3E50] mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
+                  placeholder="e.g., user@example.com"
+                  required
+                />
+              </div>
+               <div className="mb-4">
+                <label htmlFor="password" className="block text-sm font-medium text-[#2C3E50] mb-1">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
+                  placeholder="Enter password"
+                  required
+                />
+              </div>
+              
+              <button
+                type="submit"
+                disabled={loading || googleLoading}
+                className="w-full text-[#3D2811] font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-[#FFB800] to-[#FF7A00] hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {loading ? 'Processing...' : (isLoginView ? 'Login' : 'Sign Up')}
+              </button>
+            </form>
+            <div className="my-6 flex items-center">
+              <div className="flex-grow border-t border-gray-300"></div>
+              <span className="flex-shrink mx-4 text-gray-400 text-sm">OR</span>
+              <div className="flex-grow border-t border-gray-300"></div>
             </div>
-             <div className="mb-4">
-              <label htmlFor="password" className="block text-sm font-medium text-[#2C3E50] mb-1">
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
-                placeholder="Enter password"
-                required
-              />
-            </div>
-            {error && <p className="text-red-500 text-xs mb-4 text-center">{error}</p>}
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full text-[#3D2811] font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-[#FFB800] to-[#FF7A00] hover:opacity-90 transition-opacity disabled:opacity-50"
+              onClick={handleGoogleLogin}
+              disabled={loading || googleLoading}
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50"
             >
-              {loading ? 'Processing...' : (isLoginView ? 'Login' : 'Sign Up')}
+              <GoogleIcon className="w-5 h-5" />
+              <span className="font-semibold text-[#2C3E50]">
+                {googleLoading ? 'Signing in...' : 'Continue with Google'}
+              </span>
             </button>
-             <div className="mt-6 text-center text-sm">
-                <button type="button" onClick={toggleView} className="text-[#7F8C8D] hover:text-[#2C3E50]">
-                    {isLoginView ? "Don't have an account? Sign Up" : "Already have an account? Login"}
-                </button>
+            {error && <p className="text-red-500 text-xs mt-4 text-center">{error}</p>}
+            <div className="mt-6 text-center text-sm">
+              <button type="button" onClick={toggleView} className="text-[#7F8C8D] hover:text-[#2C3E50]">
+                  {isLoginView ? "Don't have an account? Sign Up" : "Already have an account? Login"}
+              </button>
             </div>
-          </form>
+          </div>
         ) : (
           <form onSubmit={handle2faSubmit}>
             <p className="text-sm text-center text-[#2C3E50] mb-4">A security code is required to access the admin panel. Please enter the one-time code.</p>

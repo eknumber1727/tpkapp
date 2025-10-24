@@ -25,9 +25,11 @@ interface DataContextType {
   // Auth
   signup: (name: string, email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<User>;
+  loginWithGoogle: () => Promise<User | void>;
   startSession: (user: User) => void;
   logout: () => void;
-  
+  resendVerificationEmail: () => Promise<void>;
+
   // User Actions
   getTemplateById: (templateId: string) => Template | undefined;
   getIsBookmarked: (templateId: string) => boolean;
@@ -52,6 +54,7 @@ interface DataContextType {
   addCategory: (name: CategoryName) => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
   updateAppSettings: (settings: Partial<AppSettings>) => Promise<void>;
+  uploadAdminFile: (file: File | Blob, path: string) => Promise<string>;
   sendNotification: (title: string, body: string) => Promise<void>;
 
   // PWA Install
@@ -68,6 +71,15 @@ const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
     return await storageRef.getDownloadURL();
 };
 
+const defaultAppSettings: AppSettings = {
+    aboutUs: '',
+    terms: '',
+    contactEmail: '',
+    adsEnabled: false,
+    adSensePublisherId: '',
+    adSenseSlotId: '',
+    faviconUrl: '',
+};
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
@@ -79,7 +91,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [categories, setCategories] = useState<Category[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [appSettings, setAppSettings] = useState<AppSettings>({aboutUs: '', terms: '', contactEmail: ''});
+  const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [installPromptEvent, setInstallPromptEvent] = useState<any | null>(null);
@@ -142,12 +154,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             // FIX: Use compat firestore API
             const userDocRef = db.collection("users").doc(user.uid);
             const userDoc = await userDocRef.get();
-            if(userDoc.exists){
+            if(userDoc.exists && auth.currentUser && auth.currentUser.uid === user.uid){
                 const userDataFromDb = userDoc.data() as UserFromFirestore;
                 // FIX: Explicitly create a plain object to prevent circular structure errors
                 const plainUserObject: User = { 
                     id: user.uid, 
                     name: userDataFromDb.name,
+                    email: userDataFromDb.email,
+                    emailVerified: user.emailVerified,
                     photo_url: userDataFromDb.photo_url,
                     role: userDataFromDb.role,
                     creator_id: userDataFromDb.creator_id,
@@ -176,6 +190,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             return {
                 id: doc.id,
                 name: data.name,
+                email: data.email,
+                emailVerified: data.emailVerified,
                 photo_url: data.photo_url,
                 role: data.role,
                 creator_id: data.creator_id,
@@ -279,13 +295,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const unsubAppSettings = db.collection("settings").doc("app").onSnapshot((doc) => {
         if (doc.exists) {
-            const data = doc.data();
-            // FIX: Explicitly create a plain object
+            const data = doc.data() as Partial<AppSettings>;
             setAppSettings({
-                aboutUs: data.aboutUs,
-                terms: data.terms,
-                contactEmail: data.contactEmail
+                aboutUs: data.aboutUs || '',
+                terms: data.terms || '',
+                contactEmail: data.contactEmail || '',
+                adsEnabled: data.adsEnabled || false,
+                adSensePublisherId: data.adSensePublisherId || '',
+                adSenseSlotId: data.adSenseSlotId || '',
+                faviconUrl: data.faviconUrl || '',
             });
+        } else {
+             setAppSettings(defaultAppSettings);
         }
     }, (error) => console.error("Error fetching app settings:", error));
 
@@ -379,19 +400,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [currentUser]);
 
   const signup = async (name: string, email: string, password: string) => {
-    // FIX: Use compat library syntax for createUserWithEmailAndPassword
     const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+    // FIX: Send verification email on signup.
+    await userCredential.user.sendEmailVerification();
     const newUser = {
         name,
+        email,
+        emailVerified: false, // User must verify their email
         photo_url: `https://i.pravatar.cc/150?u=${userCredential.user.uid}`,
         role: Role.USER,
         creator_id: `TK${Date.now().toString().slice(-6)}`,
-        // FIX: Use compat firestore API for serverTimestamp
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
         lastUsernameChangeAt: null,
         fcmTokens: [],
     };
-    // FIX: Use compat firestore API
     await db.collection("users").doc(userCredential.user.uid).set(newUser);
   };
 
@@ -408,6 +430,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { 
         id: userCredential.user.uid, 
         name: userDataFromDb.name,
+        email: userDataFromDb.email,
+        emailVerified: userCredential.user.emailVerified,
         photo_url: userDataFromDb.photo_url,
         role: userDataFromDb.role,
         creator_id: userDataFromDb.creator_id,
@@ -415,6 +439,68 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
         fcmTokens: userDataFromDb.fcmTokens || []
     };
+  };
+
+  const loginWithGoogle = async (): Promise<User | void> => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    const result = await auth.signInWithPopup(provider);
+    const user = result.user;
+    if (!user) {
+        throw new Error("Google Sign-In failed.");
+    }
+
+    const userDocRef = db.collection("users").doc(user.uid);
+    const userDoc = await userDocRef.get();
+
+    let appUser: User;
+
+    if (!userDoc.exists) { // New user via Google
+        const creator_id = `TK${Date.now().toString().slice(-6)}`;
+        const newUserFromGoogle = {
+            name: user.displayName || 'New User',
+            email: user.email || '',
+            emailVerified: user.emailVerified,
+            photo_url: user.photoURL || `https://i.pravatar.cc/150?u=${user.uid}`,
+            role: Role.USER,
+            creator_id,
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            lastUsernameChangeAt: null,
+            fcmTokens: [],
+        };
+        await userDocRef.set(newUserFromGoogle);
+        appUser = {
+            id: user.uid,
+            name: newUserFromGoogle.name,
+            email: newUserFromGoogle.email,
+            emailVerified: newUserFromGoogle.emailVerified,
+            photo_url: newUserFromGoogle.photo_url,
+            role: newUserFromGoogle.role,
+            creator_id: newUserFromGoogle.creator_id,
+            created_at: new Date().toISOString(), // Use current time for immediate session start
+            lastUsernameChangeAt: null,
+            fcmTokens: [],
+        };
+    } else { // Existing user
+        const userDataFromDb = userDoc.data() as UserFromFirestore;
+        // Ensure the emailVerified status is updated from Google
+        if (user.emailVerified && !userDataFromDb.emailVerified) {
+            await userDocRef.update({ emailVerified: true });
+        }
+        appUser = {
+            id: user.uid,
+            name: userDataFromDb.name,
+            email: userDataFromDb.email,
+            emailVerified: user.emailVerified,
+            photo_url: userDataFromDb.photo_url,
+            role: userDataFromDb.role,
+            creator_id: userDataFromDb.creator_id,
+            created_at: toISOStringSafe(userDataFromDb.created_at),
+            lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
+            fcmTokens: userDataFromDb.fcmTokens || [],
+        };
+    }
+    startSession(appUser);
+    return appUser;
   };
 
   const startSession = (user: User) => {
@@ -427,6 +513,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await auth.signOut();
     setCurrentUser(null);
     localStorage.removeItem('timepass-katta-user');
+  };
+
+  const resendVerificationEmail = async () => {
+    if (!auth.currentUser) {
+      throw new Error("No user is currently logged in.");
+    }
+    await auth.currentUser.sendEmailVerification();
   };
 
   const getTemplateById = (templateId: string) => templates.find(t => t.id === templateId);
@@ -699,6 +792,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await db.collection("settings").doc("app").set(settings, { merge: true });
   }
   
+  const uploadAdminFile = async (file: File | Blob, path: string): Promise<string> => {
+      if (!currentUser || currentUser.role !== Role.ADMIN) {
+          throw new Error("You don't have permission to perform this action.");
+      }
+      return uploadFile(file, path);
+  };
+  
   const sendNotification = async (title: string, body: string) => {
       if (!currentUser || currentUser.role !== Role.ADMIN) return;
       await db.collection("notifications").add({
@@ -710,9 +810,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const value = {
     users, templates, bookmarks, likes, savedDesigns, downloads, categories, suggestions, notifications, appSettings, currentUser, loading, notificationPermission,
-    signup, login, startSession, logout,
+    signup, login, loginWithGoogle, startSession, logout, resendVerificationEmail,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
-    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings, sendNotification,
+    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, updateAppSettings, uploadAdminFile, sendNotification,
     installPromptEvent, triggerInstallPrompt
   };
 

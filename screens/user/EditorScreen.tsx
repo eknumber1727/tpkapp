@@ -130,12 +130,16 @@ const EditorScreen: React.FC = () => {
     setIsDownloading(true);
 
     try {
+        const displaySize = { 
+            width: canvasContainerRef.current.offsetWidth,
+            height: canvasContainerRef.current.offsetHeight
+        };
         const canvasSize = { 
-            width: canvasContainerRef.current.offsetWidth * 2, // Export at 2x resolution
-            height: canvasContainerRef.current.offsetHeight * 2
+            width: displaySize.width * 2, // Export at 2x resolution
+            height: displaySize.height * 2
         };
 
-        const blob = await exportMedia(userMedia, template.png_url, transform, canvasSize);
+        const blob = await exportMedia(userMedia, template.png_url, transform, canvasSize, displaySize);
         const fileName = 'timepass-katta-creation.png';
         const file = new File([blob], fileName, { type: 'image/png' });
 

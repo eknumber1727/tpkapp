@@ -3,31 +3,33 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Timepass Katta – PNG Overlay</title>
+    <title>www.timepasskatta.app</title>
     
     <!-- PWA & Mobile Optimization -->
     <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icons/icon-192x192.png" />
     <meta name="theme-color" content="#FF7A00">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- IMPORTANT: Replace YOUR_ADSENSE_ID with your actual Google AdSense Publisher ID -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-YOUR_ADSENSE_ID"
-     crossorigin="anonymous"></script>
+
+    <!-- Use Firebase v8 compat scripts directly to match the application's code style -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
+    
 <script type="importmap">
 {
   "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.9.4",
-    "firebase/app": "https://www.gstatic.com/firebasejs/9.17.1/firebase-app.js",
-    "firebase/auth": "https://www.gstatic.com/firebasejs/9.17.1/firebase-auth.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore.js",
-    "firebase/storage": "https://www.gstatic.com/firebasejs/9.17.1/firebase-storage.js",
     "firebase/": "https://aistudiocdn.com/firebase@^12.4.0/",
+    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.9.4",
     "uuid": "https://aistudiocdn.com/uuid@^13.0.0"
   }
 }

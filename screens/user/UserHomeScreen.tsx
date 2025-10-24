@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import TemplateCard from '../../components/user/TemplateCard';
 import CategoryChips from '../../components/user/CategoryChips';
@@ -42,6 +43,16 @@ const UserHomeScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<CategoryName | 'All'>('All');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
   const [sortBy, setSortBy] = useState<SortOption>('Latest');
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.state?.selectedCategory) {
+        setSelectedCategory(location.state.selectedCategory);
+        // Clean up state to prevent it from sticking on back navigation
+        window.history.replaceState({}, document.title)
+    }
+  }, [location.state]);
+
 
   const filteredAndSortedTemplates = useMemo(() => {
     const filtered = templates
@@ -113,10 +124,10 @@ const UserHomeScreen: React.FC = () => {
         <CategoryChips categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
       </div>
 
-      <div className="p-4 grid grid-cols-2 gap-4">
+      <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {loading ? (
           <>
-            {Array.from({ length: 6 }).map((_, index) => (
+            {Array.from({ length: 10 }).map((_, index) => (
               <TemplateCardSkeleton key={index} />
             ))}
           </>
@@ -125,8 +136,8 @@ const UserHomeScreen: React.FC = () => {
             {filteredAndSortedTemplates.map((template, index) => (
               <React.Fragment key={template.id}>
                 <TemplateCard template={template} />
-                {index === 3 && (
-                  <div className="col-span-2">
+                {index === 5 && (
+                  <div className="col-span-full">
                     <AdBanner />
                   </div>
                 )}
@@ -136,7 +147,7 @@ const UserHomeScreen: React.FC = () => {
         )}
         
         {!loading && filteredAndSortedTemplates.length === 0 && (
-          <div className="col-span-2 text-center py-20 bg-white rounded-[30px] mt-4">
+          <div className="col-span-full text-center py-20 bg-white rounded-[30px] mt-4">
             <p className="text-[#7F8C8D]">No templates found. Try a different search!</p>
           </div>
         )}

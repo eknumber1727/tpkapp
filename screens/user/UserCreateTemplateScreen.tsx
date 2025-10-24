@@ -22,6 +22,14 @@ const UserCreateTemplateScreen: React.FC = () => {
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
+    // Effect to clean up blob URLs to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            if (pngPreview) URL.revokeObjectURL(pngPreview);
+            if (bgPreview) URL.revokeObjectURL(bgPreview);
+        };
+    }, [pngPreview, bgPreview]);
+
     useEffect(() => {
         if (pngFile && bgFile && canvasRef.current) {
             const canvas = canvasRef.current;
@@ -40,8 +48,7 @@ const UserCreateTemplateScreen: React.FC = () => {
                     ctx.clearRect(0,0, canvas.width, canvas.height);
                     ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
                     ctx.drawImage(pngImage, 0, 0, canvas.width, canvas.height);
-                    URL.revokeObjectURL(bgImage.src);
-                    URL.revokeObjectURL(pngImage.src);
+                    // No need to revoke here, the main cleanup effect will handle it.
                 };
             };
         }
@@ -56,9 +63,6 @@ const UserCreateTemplateScreen: React.FC = () => {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, setFile: React.Dispatch<React.SetStateAction<File | null>>, setPreview: React.Dispatch<React.SetStateAction<string|null>>) => {
         const file = e.target.files?.[0];
         if (file) {
-            if(pngPreview) URL.revokeObjectURL(pngPreview);
-            if(bgPreview) URL.revokeObjectURL(bgPreview);
-
             setError('');
             setFile(file);
             setPreview(URL.createObjectURL(file));

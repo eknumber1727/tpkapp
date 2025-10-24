@@ -55,7 +55,8 @@ export const exportMedia = async (
     userMedia: { src: string, type: 'image' | 'video' },
     templateImageSrc: string,
     transform: { x: number; y: number; scale: number; },
-    canvasSize: { width: number; height: number; }
+    canvasSize: { width: number; height: number; },
+    displaySize: { width: number; height: number; }
 ): Promise<Blob> => {
     const canvas = document.createElement('canvas');
     canvas.width = canvasSize.width;
@@ -73,13 +74,21 @@ export const exportMedia = async (
             mediaElement = await loadImage(userMedia.src);
         } else {
             mediaElement = await loadVideoFrame(userMedia.src);
-            if (mediaElement instanceof HTMLVideoElement) {
-                 // We are only exporting the first frame as an image.
-            }
         }
+
+        // Calculate the scaling factor between the on-screen display and the export canvas
+        const scaleX = canvas.width / displaySize.width;
+        const scaleY = canvas.height / displaySize.height;
+        
+        // As we maintain aspect ratio, scaleX and scaleY should be the same. We can use one.
+        const exportTransform = {
+            x: transform.x * scaleX,
+            y: transform.y * scaleY,
+            scale: transform.scale * scaleX
+        };
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawTransformedImage(ctx, mediaElement, transform);
+        drawTransformedImage(ctx, mediaElement, exportTransform);
         ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
         
         return await new Promise((resolve, reject) => {
