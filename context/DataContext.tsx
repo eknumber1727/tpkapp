@@ -506,6 +506,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const saveDesign = async (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => {
     if (!currentUser) return;
     
+    // Ensure muted is explicitly handled
+    const bgMedia = designData.layers_json.bgMedia;
+    if (bgMedia.type === 'video' && bgMedia.muted === undefined) {
+        bgMedia.muted = true; // Default to muted if not specified
+    }
+
     // Convert complex object to JSON string for Firestore
     const layersJsonString = JSON.stringify(designData.layers_json);
 
@@ -747,27 +753,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await db.collection("languages").doc(languageId).delete();
     };
   
-    const addSticker = async (name: string, file: File) => {
-        if (!currentUser || currentUser.role !== Role.ADMIN) return;
-        const id = uuidv4();
-        const url = await uploadFile(file, `stickers/${id}`);
-        await db.collection("stickers").doc(id).set({
-            name,
-            url,
-            created_at: firebase.firestore.FieldValue.serverTimestamp()
-        });
-    };
-
-    const deleteSticker = async (stickerId: string) => {
-        if (!currentUser || currentUser.role !== Role.ADMIN) return;
-        try {
-            await storage.ref(`stickers/${stickerId}`).delete();
-        } catch(e) {
-            console.error("Sticker file may not exist in storage, continuing deletion from DB.", e);
-        }
-        await db.collection("stickers").doc(stickerId).delete();
-    };
-
   const updateAppSettings = async (settings: Partial<AppSettings>) => {
       if (!currentUser || currentUser.role !== Role.ADMIN) return;
       await db.collection("settings").doc("app").set(settings, { merge: true });

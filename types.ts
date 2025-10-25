@@ -102,6 +102,7 @@ export interface SavedDesignData {
         scale: number;
         x: number;
         y: number;
+        muted?: boolean;
     };
 }
 

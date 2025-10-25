@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon } from '../../components/shared/Icons';
+import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon, VolumeOffIcon, VolumeUpIcon } from '../../components/shared/Icons';
 import { exportMedia } from '../../utils/helpers';
 import { AspectRatio, SavedDesignData } from '../../types';
 import { ASPECT_RATIOS } from '../../constants';
@@ -16,7 +16,7 @@ const DownloadCompleteModal: React.FC<{
         <div className="bg-white p-8 rounded-[30px] shadow-lg text-center max-w-sm mx-4">
             <CheckCircleIcon className="w-16 h-16 text-green-500 mx-auto" />
             <h2 className="text-2xl font-bold text-[#2C3E50] mt-4">Success!</h2>
-            <p className="text-[#7F8C8D] mt-2 mb-6">Your creation has been saved to your downloads.</p>
+            <p className="text-[#7F8C8D] mt-2 mb-6">Your creation has been processed.</p>
             <div className="flex flex-col gap-3">
                  {canShare && onShare && (
                     <button
@@ -58,7 +58,8 @@ const EditorScreen: React.FC = () => {
   
   // UI State
   const [isDownloadComplete, setIsDownloadComplete] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState('');
   const [generatedFile, setGeneratedFile] = useState<File | null>(null);
   
   // Interaction Refs
@@ -104,9 +105,9 @@ const EditorScreen: React.FC = () => {
     const mediaRatio = mediaWidth / mediaHeight;
     
     let scale;
-    if (mediaRatio > containerRatio) {
+    if (mediaRatio > containerRatio) { // Media is wider than container
       scale = containerHeight / mediaHeight;
-    } else {
+    } else { // Media is taller or same ratio
       scale = containerWidth / mediaWidth;
     }
     
@@ -127,7 +128,8 @@ const EditorScreen: React.FC = () => {
         }
       };
       
-      if ((media instanceof HTMLImageElement && media.complete) || (media instanceof HTMLVideoElement && media.readyState > 0)) {
+      // Check if media is already loaded
+      if ((media instanceof HTMLImageElement && media.complete) || (media instanceof HTMLVideoElement && media.readyState > 2)) {
         handler();
       } else {
         media.addEventListener(eventToListen, handler);
@@ -140,11 +142,11 @@ const EditorScreen: React.FC = () => {
   useEffect(() => {
     if (bgMedia?.type === 'video' && mediaRef.current) {
         const videoElement = mediaRef.current as HTMLVideoElement;
-        videoElement.muted = true;
+        videoElement.muted = bgMedia.muted ?? true; // Default to muted
         videoElement.setAttribute('playsinline', 'true');
         videoElement.play().catch(error => console.warn("Video autoplay was prevented by the browser.", error));
     }
-  }, [bgMedia?.src]);
+  }, [bgMedia?.src, bgMedia?.muted]);
 
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,17 +154,24 @@ const EditorScreen: React.FC = () => {
       const file = e.target.files[0];
       const url = URL.createObjectURL(file);
       const type = file.type.startsWith('video') ? 'video' : 'image';
-      setBgMedia({ src: url, type, x: 0, y: 0, scale: 1 });
+      setBgMedia({ src: url, type, x: 0, y: 0, scale: 1, muted: true });
     }
   };
   
   const resetTransform = () => autoFitMedia();
+
+  const toggleMute = () => {
+      if (bgMedia?.type === 'video') {
+          setBgMedia(prev => prev ? ({...prev, muted: !prev.muted}) : null);
+      }
+  }
   
   // --- Interaction Handlers ---
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.target !== e.currentTarget) return;
+    if (e.target !== e.currentTarget) return; // Ignore events from children (like mute button)
     interactionState.isDragging = true;
     interactionState.dragStart = { x: e.clientX, y: e.clientY };
+    (e.target as HTMLElement).style.cursor = 'grabbing';
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -174,8 +183,9 @@ const EditorScreen: React.FC = () => {
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent) => {
     interactionState.isDragging = false;
+    (e.target as HTMLElement).style.cursor = 'grab';
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -188,15 +198,17 @@ const EditorScreen: React.FC = () => {
   
     const handleTouchStart = (e: React.TouchEvent) => {
         const touches = e.touches;
-        if (e.target === e.currentTarget) {
-            e.preventDefault();
-        }
+        // Only trigger interactions if the event starts on the container itself
+        if (e.target !== e.currentTarget) return;
 
+        // Allow page scroll by default unless we start a pan/pinch
         if (touches.length === 2 && bgMedia) {
+            e.preventDefault();
             interactionState.isPinching = true;
             interactionState.initialPinchDist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
             interactionState.initialScale = bgMedia.scale;
         } else if (touches.length === 1) {
+            e.preventDefault();
             interactionState.isDragging = true;
             interactionState.dragStart = { x: touches[0].clientX, y: touches[0].clientY };
         }
@@ -204,7 +216,7 @@ const EditorScreen: React.FC = () => {
     
     const handleTouchMove = (e: React.TouchEvent) => {
         const touches = e.touches;
-        if (e.target === e.currentTarget) {
+        if (interactionState.isPinching || interactionState.isDragging) {
             e.preventDefault();
         }
 
@@ -243,15 +255,16 @@ const EditorScreen: React.FC = () => {
     } catch (error) {
         if ((error as Error).name !== 'AbortError') {
             console.error("Share failed:", error);
-            alert("Could not share image.");
+            alert("Could not share creation.");
         }
     }
   };
 
   const handleDownload = async () => {
-    if (!bgMedia || !template || !canvasContainerRef.current || isDownloading) return;
-    setIsDownloading(true);
-    setGeneratedFile(null); // Reset previous file
+    if (!bgMedia || !template || !canvasContainerRef.current || isProcessing) return;
+    setIsProcessing(true);
+    setProcessingStatus('Initializing...');
+    setGeneratedFile(null);
 
     try {
         const designData: SavedDesignData = { bgMedia };
@@ -259,32 +272,57 @@ const EditorScreen: React.FC = () => {
             width: canvasContainerRef.current.offsetWidth,
             height: canvasContainerRef.current.offsetHeight
         };
-        const canvasSize = { 
-            width: displaySize.width * 2,
-            height: displaySize.height * 2
-        };
+        // Use a higher resolution for export
+        const exportWidth = 1080;
+        const exportHeight = exportWidth / (displaySize.width / displaySize.height);
+        const canvasSize = { width: exportWidth, height: exportHeight };
 
-        const blob = await exportMedia(designData, template.png_url, appSettings, canvasSize, displaySize);
-        const fileName = 'timepass-katta-creation.png';
-        const file = new File([blob], fileName, { type: 'image/png' });
+        const { blob, fileType } = await exportMedia(designData, template.png_url, appSettings, canvasSize, displaySize, setProcessingStatus);
+        
+        const extension = fileType === 'video' ? 'mp4' : 'jpg';
+        const mimeType = fileType === 'video' ? 'video/mp4' : 'image/jpeg';
+        const fileName = `timepass-katta-creation.${extension}`;
+        const file = new File([blob], fileName, { type: mimeType });
 
         const onSuccessfulExport = () => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: reader.result as string });
+            // Generate a thumbnail for the downloads page
+            const thumbCanvas = document.createElement('canvas');
+            thumbCanvas.width = 200;
+            thumbCanvas.height = 200;
+            const thumbCtx = thumbCanvas.getContext('2d');
+            if (thumbCtx) {
+                const tempUrl = URL.createObjectURL(blob);
+                if (fileType === 'image') {
+                    const img = new Image();
+                    img.onload = () => {
+                        thumbCtx.drawImage(img, 0, 0, 200, 200);
+                        addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.8) });
+                        URL.revokeObjectURL(tempUrl);
+                    };
+                    img.src = tempUrl;
+                } else {
+                    const video = document.createElement('video');
+                    video.onloadeddata = () => {
+                        video.currentTime = 0;
+                    };
+                    video.onseeked = () => {
+                         thumbCtx.drawImage(video, 0, 0, 200, 200);
+                         addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.8) });
+                         URL.revokeObjectURL(tempUrl);
+                    };
+                    video.src = tempUrl;
+                }
+            } else {
+                addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: undefined });
             }
-            reader.readAsDataURL(blob);
-            setIsDownloadComplete(true);
+             setIsDownloadComplete(true);
         };
         
         const canShare = navigator.share && navigator.canShare({ files: [file] });
 
         if (canShare) {
-            // On mobile/sharing devices, DON'T share yet.
-            // Just save the file and show the modal. The user will share from there.
             setGeneratedFile(file);
         } else {
-            // On desktop/non-sharing devices, download immediately.
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = fileName;
@@ -297,9 +335,10 @@ const EditorScreen: React.FC = () => {
 
     } catch (error: any) {
         console.error("Failed to export media:", error);
-        alert(`Could not create image. Error: ${error.message}`);
+        alert(`Could not create file. Error: ${error.message}`);
     } finally {
-        setIsDownloading(false);
+        setIsProcessing(false);
+        setProcessingStatus('');
     }
   };
   
@@ -345,13 +384,14 @@ const EditorScreen: React.FC = () => {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          style={{ cursor: bgMedia ? 'grab' : 'default' }}
         >
           {bgMedia ? (
             <>
               {/* Background Media */}
               <div 
                 className="absolute top-0 left-0 origin-top-left"
-                style={{ transform: `translate(${bgMedia.x}px, ${bgMedia.y}px) scale(${bgMedia.scale})`, cursor: interactionState.isDragging ? 'grabbing' : 'grab' }}
+                style={{ transform: `translate(${bgMedia.x}px, ${bgMedia.y}px) scale(${bgMedia.scale})` }}
               >
                 {bgMedia.type === 'image' ? (
                   <img ref={mediaRef as React.RefObject<HTMLImageElement>} src={bgMedia.src} alt="User upload" className="pointer-events-none max-w-none" />
@@ -359,6 +399,13 @@ const EditorScreen: React.FC = () => {
                   <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={bgMedia.src} autoPlay muted loop playsInline className="pointer-events-none max-w-none" />
                 )}
               </div>
+              
+              {/* Mute Button for Video */}
+              {bgMedia.type === 'video' && (
+                <button onClick={toggleMute} className="absolute top-3 left-3 bg-black/40 text-white p-2 rounded-full backdrop-blur-sm z-20">
+                    {bgMedia.muted ? <VolumeOffIcon className="w-5 h-5" /> : <VolumeUpIcon className="w-5 h-5" />}
+                </button>
+              )}
 
               {/* Template Overlay */}
               <img src={template.png_url} alt="Template overlay" className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none z-10" />
@@ -382,8 +429,8 @@ const EditorScreen: React.FC = () => {
 
             <div className="flex gap-2">
                 <button onClick={handleSaveDraft} disabled={!bgMedia} className="w-full text-center p-3 rounded-[20px] bg-white text-[#2C3E50] font-bold disabled:opacity-50 shadow-sm">Save Draft</button>
-                <button onClick={handleDownload} disabled={!bgMedia || isDownloading} className="w-full text-center p-3 rounded-[20px] bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2C11] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                    {isDownloading ? 'Processing...' : (
+                <button onClick={handleDownload} disabled={!bgMedia || isProcessing} className="w-full text-center p-3 rounded-[20px] bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2C11] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                    {isProcessing ? (processingStatus || 'Processing...') : (
                         canShare ? (
                             <> <ShareIcon className="w-5 h-5" /> <span>Share & Save</span> </>
                         ) : (

@@ -13,6 +13,17 @@ const UserSavedDesignsScreen: React.FC = () => {
   }
   
   const handleEditDraft = (design: SavedDesign) => {
+      // Ensure layers_json is parsed if it's a string
+      const designData = typeof design.layers_json === 'string' 
+          ? JSON.parse(design.layers_json) as SavedDesignData
+          : design.layers_json;
+      
+      if (!designData.bgMedia) {
+          console.error("Draft is corrupted, missing bgMedia:", design);
+          alert("Could not load this draft as it seems to be corrupted.");
+          return;
+      }
+      
       navigate(`/editor/${design.template_id}/draft/${design.id}`);
   }
 
