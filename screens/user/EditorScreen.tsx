@@ -6,13 +6,27 @@ import { exportMedia } from '../../utils/helpers';
 import { AspectRatio, SavedDesignData } from '../../types';
 import { ASPECT_RATIOS } from '../../constants';
 
-const DownloadCompleteModal: React.FC<{ onHome: () => void; onContinue: () => void; }> = ({ onHome, onContinue }) => (
+const DownloadCompleteModal: React.FC<{ 
+    onHome: () => void; 
+    onContinue: () => void; 
+    onShare?: () => void; 
+    canShare: boolean;
+}> = ({ onHome, onContinue, onShare, canShare }) => (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
         <div className="bg-white p-8 rounded-[30px] shadow-lg text-center max-w-sm mx-4">
             <CheckCircleIcon className="w-16 h-16 text-green-500 mx-auto" />
             <h2 className="text-2xl font-bold text-[#2C3E50] mt-4">Success!</h2>
-            <p className="text-[#7F8C8D] mt-2 mb-6">Your creation is ready. Use the share menu to save or send it.</p>
+            <p className="text-[#7F8C8D] mt-2 mb-6">Your creation has been saved to your downloads.</p>
             <div className="flex flex-col gap-3">
+                 {canShare && onShare && (
+                    <button
+                        onClick={onShare}
+                        className="w-full flex items-center justify-center gap-2 text-white font-bold py-3 px-4 rounded-lg bg-blue-500"
+                    >
+                        <ShareIcon className="w-5 h-5" />
+                        Share Now
+                    </button>
+                )}
                 <button
                     onClick={onHome}
                     className="w-full text-white font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-[#FFB800] to-[#FF7A00]"
@@ -45,6 +59,7 @@ const EditorScreen: React.FC = () => {
   // UI State
   const [isDownloadComplete, setIsDownloadComplete] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [generatedFile, setGeneratedFile] = useState<File | null>(null);
   
   // Interaction Refs
   const mediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
@@ -60,7 +75,6 @@ const EditorScreen: React.FC = () => {
   // Load draft or set defaults
   useEffect(() => {
     if (existingDraft && template) {
-        // Handle both string and object formats for backward compatibility
         const designData = typeof existingDraft.layers_json === 'string' 
             ? JSON.parse(existingDraft.layers_json) as SavedDesignData
             : existingDraft.layers_json;
@@ -90,9 +104,9 @@ const EditorScreen: React.FC = () => {
     const mediaRatio = mediaWidth / mediaHeight;
     
     let scale;
-    if (mediaRatio > containerRatio) { // Media is wider
+    if (mediaRatio > containerRatio) {
       scale = containerHeight / mediaHeight;
-    } else { // Media is taller
+    } else {
       scale = containerWidth / mediaWidth;
     }
     
@@ -124,13 +138,9 @@ const EditorScreen: React.FC = () => {
   }, [bgMedia?.src, existingDraft, autoFitMedia]);
 
   useEffect(() => {
-    // BUG FIX: Added a dedicated useEffect to programmatically play the video element.
-    // This ensures that background videos start playing reliably on all devices, 
-    // as the `autoPlay` attribute can be inconsistent across browsers, especially on mobile.
     if (bgMedia?.type === 'video' && mediaRef.current) {
         const videoElement = mediaRef.current as HTMLVideoElement;
         videoElement.muted = true;
-        // The `playsInline` attribute is critical for iOS.
         videoElement.setAttribute('playsinline', 'true');
         videoElement.play().catch(error => console.warn("Video autoplay was prevented by the browser.", error));
     }
@@ -150,7 +160,7 @@ const EditorScreen: React.FC = () => {
   
   // --- Interaction Handlers ---
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.target !== e.currentTarget) return; // Prevent events on children
+    if (e.target !== e.currentTarget) return;
     interactionState.isDragging = true;
     interactionState.dragStart = { x: e.clientX, y: e.clientY };
   };
@@ -169,26 +179,24 @@ const EditorScreen: React.FC = () => {
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey && bgMedia) { // Desktop zoom
+    if (e.ctrlKey && bgMedia) {
         e.preventDefault();
         const scaleAmount = e.deltaY * -0.001;
         setBgMedia(prev => prev ? ({...prev, scale: Math.max(0.1, prev.scale + scaleAmount)}) : null);
     }
   };
   
-    // --- Touch Handlers for Mobile ---
     const handleTouchStart = (e: React.TouchEvent) => {
         const touches = e.touches;
-        // Prevents page scroll ONLY if we are interacting with the canvas content
         if (e.target === e.currentTarget) {
             e.preventDefault();
         }
 
-        if (touches.length === 2 && bgMedia) { // Pinching
+        if (touches.length === 2 && bgMedia) {
             interactionState.isPinching = true;
             interactionState.initialPinchDist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
             interactionState.initialScale = bgMedia.scale;
-        } else if (touches.length === 1) { // Panning
+        } else if (touches.length === 1) {
             interactionState.isDragging = true;
             interactionState.dragStart = { x: touches[0].clientX, y: touches[0].clientY };
         }
@@ -223,10 +231,27 @@ const EditorScreen: React.FC = () => {
     saveDesign({ id: existingDraft?.id, template_id: template.id, ratio: activeRatio, layers_json: designData });
     alert('Draft Saved!');
   };
+  
+  const handleShareFromModal = async () => {
+    if (!generatedFile || !navigator.share) return;
+    try {
+        await navigator.share({
+            files: [generatedFile],
+            title: 'My Timepass Katta Creation',
+            text: 'make your creative now visit: www.timepasskatta.app',
+        });
+    } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+            console.error("Share failed:", error);
+            alert("Could not share image.");
+        }
+    }
+  };
 
   const handleDownload = async () => {
     if (!bgMedia || !template || !canvasContainerRef.current || isDownloading) return;
     setIsDownloading(true);
+    setGeneratedFile(null); // Reset previous file
 
     try {
         const designData: SavedDesignData = { bgMedia };
@@ -235,7 +260,7 @@ const EditorScreen: React.FC = () => {
             height: canvasContainerRef.current.offsetHeight
         };
         const canvasSize = { 
-            width: displaySize.width * 2, // Export at 2x resolution
+            width: displaySize.width * 2,
             height: displaySize.height * 2
         };
 
@@ -251,15 +276,15 @@ const EditorScreen: React.FC = () => {
             reader.readAsDataURL(blob);
             setIsDownloadComplete(true);
         };
+        
+        const canShare = navigator.share && navigator.canShare({ files: [file] });
 
-        if (navigator.share && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-                files: [file],
-                title: 'My Timepass Katta Creation',
-                text: 'make your creative now visit: www.timepasskatta.app',
-            });
-            onSuccessfulExport();
+        if (canShare) {
+            // On mobile/sharing devices, DON'T share yet.
+            // Just save the file and show the modal. The user will share from there.
+            setGeneratedFile(file);
         } else {
+            // On desktop/non-sharing devices, download immediately.
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = fileName;
@@ -267,15 +292,12 @@ const EditorScreen: React.FC = () => {
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
-            onSuccessfulExport();
         }
+        onSuccessfulExport();
+
     } catch (error: any) {
-        if (error.name === 'AbortError') {
-            console.log('Share canceled by user.');
-        } else {
-            console.error("Failed to export or share media:", error);
-            alert(`Could not create image. Error: ${error.message}`);
-        }
+        console.error("Failed to export media:", error);
+        alert(`Could not create image. Error: ${error.message}`);
     } finally {
         setIsDownloading(false);
     }
@@ -294,7 +316,6 @@ const EditorScreen: React.FC = () => {
   }
   
   const canShare = !!navigator.share;
-
 
   if (!template) return <div className="p-4 text-center">Template not found.</div>;
 
@@ -381,6 +402,8 @@ const EditorScreen: React.FC = () => {
                 navigate('/');
             }}
             onContinue={() => setIsDownloadComplete(false)}
+            onShare={handleShareFromModal}
+            canShare={!!generatedFile && canShare}
         />
     )}
     </>
