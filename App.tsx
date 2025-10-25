@@ -30,7 +30,6 @@ import AdminAppSettingsManagerScreen from './screens/admin/AdminAppSettingsManag
 import AdminLanguageManagerScreen from './screens/admin/AdminLanguageManagerScreen';
 import AdminFeaturedManagerScreen from './screens/admin/AdminFeaturedManagerScreen';
 import AdminUserManagerScreen from './screens/admin/AdminUserManagerScreen';
-import AdminStickerManagerScreen from './screens/admin/AdminStickerManagerScreen';
 
 const UserRoutes = () => (
   <UserLayout>
@@ -66,7 +65,6 @@ const AdminRoutes = () => (
       <Route path="/settings" element={<AdminAppSettingsManagerScreen />} />
       <Route path="/featured" element={<AdminFeaturedManagerScreen />} />
       <Route path="/users" element={<AdminUserManagerScreen />} />
-      <Route path="/stickers" element={<AdminStickerManagerScreen />} />
       <Route path="/create-template" element={<UserCreateTemplateScreen />} />
       <Route path="/templates/:templateId/edit" element={<AdminEditTemplateScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,4 +1,4 @@
-import { AspectRatio, Layer, TextLayer, StickerLayer, SavedDesignData, AppSettings } from '../types';
+import { AspectRatio, SavedDesignData, AppSettings } from '../types';
 
 // Helper to rewrite Firebase Storage URLs to use the Netlify proxy
 const rewriteFirebaseUrl = (url: string): string => {
@@ -55,7 +55,7 @@ const loadVideoFrame = (src: string): Promise<HTMLVideoElement> => {
 const drawWatermark = (ctx: CanvasRenderingContext2D, text: string) => {
     ctx.save();
     const padding = 20;
-    ctx.font = 'bold 16px Poppins';
+    ctx.font = 'bold 16px Poppins, sans-serif';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     const textMetrics = ctx.measureText(text);
     const x = ctx.canvas.width - textMetrics.width - padding;
@@ -80,11 +80,8 @@ export const exportMedia = async (
         throw new Error('Could not get canvas context');
     }
 
-    // Load all images in parallel
-    const [templateImage, ...layerImages] = await Promise.all([
-        loadImage(templateImageSrc),
-        ...designData.layers.filter(l => l.type === 'sticker').map(l => loadImage((l as StickerLayer).src))
-    ]);
+    // Load template image
+    const templateImage = await loadImage(templateImageSrc);
     
     // Load background media
     let mediaElement: HTMLImageElement | HTMLVideoElement;
@@ -112,37 +109,8 @@ export const exportMedia = async (
 
     // 2. Draw Template Overlay
     ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
-
-    // 3. Draw Stickers & Text
-    let stickerImageIndex = 0;
-    for (const layer of designData.layers) {
-        ctx.save();
-        // Apply transformations (position, scale, rotation)
-        const tx = layer.x * scaleFactor;
-        const ty = layer.y * scaleFactor;
-        ctx.translate(tx, ty);
-        ctx.rotate(layer.rotation * Math.PI / 180);
-        ctx.scale(layer.scale * scaleFactor, layer.scale * scaleFactor);
-
-        if (layer.type === 'text') {
-            const textLayer = layer as TextLayer;
-            ctx.font = `bold ${textLayer.fontSize}px ${textLayer.fontFamily}`;
-            ctx.fillStyle = textLayer.color;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(textLayer.text, 0, 0); // Draw at new origin
-        } else if (layer.type === 'sticker') {
-            const stickerLayer = layer as StickerLayer;
-            const stickerImage = layerImages[stickerImageIndex++];
-            if (stickerImage) {
-                // Draw centered on new origin
-                ctx.drawImage(stickerImage, -stickerLayer.width / 2, -stickerLayer.height / 2, stickerLayer.width, stickerLayer.height);
-            }
-        }
-        ctx.restore();
-    }
     
-    // 4. Draw Watermark if enabled
+    // 3. Draw Watermark if enabled
     if (appSettings.watermarkEnabled && appSettings.watermarkText) {
         drawWatermark(ctx, appSettings.watermarkText);
     }

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Role, SubmissionStatus } from '../types';
-import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, Language, Sticker, SavedDesignData } from '../types';
+import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, Language, SavedDesignData } from '../types';
 // FIX: Import firebase default for compat types, and named exports for service instances.
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,7 +19,6 @@ interface DataContextType {
   downloads: Download[];
   categories: Category[];
   languages: Language[];
-  stickers: Sticker[];
   suggestions: Suggestion[];
   notifications: Notification[];
   appSettings: AppSettings;
@@ -63,8 +62,6 @@ interface DataContextType {
   deleteCategory: (categoryId: string) => Promise<void>;
   addLanguage: (name: string) => Promise<void>;
   deleteLanguage: (languageId: string) => Promise<void>;
-  addSticker: (name: string, file: File) => Promise<void>;
-  deleteSticker: (stickerId: string) => Promise<void>;
   updateAppSettings: (settings: Partial<AppSettings>) => Promise<void>;
   uploadAdminFile: (file: File | Blob, path: string) => Promise<string>;
   sendNotification: (title: string, body: string) => Promise<void>;
@@ -107,7 +104,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [languages, setLanguages] = useState<Language[]>([]);
-  const [stickers, setStickers] = useState<Sticker[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
@@ -230,10 +226,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLanguages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Language)));
     }, (error) => console.error("Error fetching languages:", error));
     
-    const unsubStickers = db.collection("stickers").orderBy("created_at", "desc").onSnapshot((snapshot) => {
-        setStickers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Sticker)));
-    }, (error) => console.error("Error fetching stickers:", error));
-
     const unsubSuggestions = db.collection("suggestions").orderBy("created_at", "desc").onSnapshot((snapshot) => {
         setSuggestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Suggestion)));
     }, (error) => console.error("Error fetching suggestions:", error));
@@ -258,7 +250,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         unsubUsers();
         unsubCategories();
         unsubLanguages();
-        unsubStickers();
         unsubSuggestions();
         unsubAppSettings();
         unsubNotifications();
@@ -799,11 +790,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const value = {
-    users, templates, adminTemplates, bookmarks, bookmarkedTemplates, likes, savedDesigns, downloads, categories, languages, stickers, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
+    users, templates, adminTemplates, bookmarks, bookmarkedTemplates, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
     login, signup, logout,
     fetchMoreTemplates, getTemplatesByCreatorId,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
-    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, addLanguage, deleteLanguage, addSticker, deleteSticker, updateAppSettings, uploadAdminFile, sendNotification,
+    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, addLanguage, deleteLanguage, updateAppSettings, uploadAdminFile, sendNotification,
     installPromptEvent, triggerInstallPrompt
   };
 
