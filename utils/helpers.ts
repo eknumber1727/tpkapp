@@ -3,6 +3,42 @@ import { AspectRatio, SavedDesignData, AppSettings } from '../types';
 // FFMPEG is loaded via script tag in index.html
 declare var FFmpeg: any;
 let ffmpeg: any;
+let ffmpegLoadPromise: Promise<void> | null = null;
+
+// Singleton loader to ensure FFMPEG is loaded only once and is ready.
+const loadFFmpeg = async (onProgress: (message: string) => void): Promise<any> => {
+    if (ffmpeg && ffmpeg.isLoaded()) {
+        return ffmpeg;
+    }
+    if (ffmpegLoadPromise) {
+        await ffmpegLoadPromise;
+        return ffmpeg;
+    }
+
+    onProgress('Initializing video processor...');
+
+    ffmpegLoadPromise = new Promise(async (resolve, reject) => {
+        try {
+            ffmpeg = FFmpeg.createFFmpeg({
+                log: true,
+                progress: (p: any) => {
+                    if (p.ratio) {
+                        onProgress(`Processing video... ${Math.round(p.ratio * 100)}%`);
+                    }
+                }
+            });
+            await ffmpeg.load();
+            resolve();
+        } catch (e) {
+            ffmpegLoadPromise = null; // Reset on failure to allow retry
+            reject(e);
+        }
+    });
+
+    await ffmpegLoadPromise;
+    return ffmpeg;
+};
+
 
 // Helper to rewrite Firebase Storage URLs to use the Netlify proxy
 // This is critical for avoiding CORS issues when drawing images to a canvas from a different origin.
@@ -93,14 +129,14 @@ export const exportMedia = async (
     appSettings: AppSettings,
     canvasSize: { width: number; height: number; },
     displaySize: { width: number; height: number; },
-    onProgress?: (message: string) => void
+    onProgress: (message: string) => void
 ): Promise<{blob: Blob, fileType: 'image' | 'video'}> => {
 
     const { bgMedia } = designData;
 
     // --- CASE 1: BACKGROUND IS AN IMAGE ---
     if (bgMedia.type === 'image') {
-        onProgress?.('Generating image...');
+        onProgress('Generating image...');
         const canvas = document.createElement('canvas');
         canvas.width = canvasSize.width;
         canvas.height = canvasSize.height;
@@ -137,67 +173,54 @@ export const exportMedia = async (
 
     // --- CASE 2: BACKGROUND IS A VIDEO ---
     else if (bgMedia.type === 'video') {
-        onProgress?.('Initializing video processor...');
-        if (!ffmpeg) {
-            ffmpeg = FFmpeg.createFFmpeg({ 
-                log: true,
-                progress: (p: any) => onProgress?.(`Processing video... ${Math.round(p.ratio * 100)}%`)
-            });
-            await ffmpeg.load();
-        }
-
-        onProgress?.('Downloading video files...');
+        const ffmpegInstance = await loadFFmpeg(onProgress);
+        
+        onProgress('Downloading video files...');
         const [videoData, overlayData] = await Promise.all([
             fetchUrlAsUint8Array(bgMedia.src),
             fetchUrlAsUint8Array(templateImageSrc),
         ]);
         
-        ffmpeg.FS('writeFile', 'input.mp4', videoData);
-        ffmpeg.FS('writeFile', 'overlay.png', overlayData);
+        ffmpegInstance.FS('writeFile', 'input.mp4', videoData);
+        ffmpegInstance.FS('writeFile', 'overlay.png', overlayData);
         
         const scaleFactor = canvasSize.width / displaySize.width;
         const x = bgMedia.x * scaleFactor;
         const y = bgMedia.y * scaleFactor;
         const scale = bgMedia.scale * scaleFactor;
         
-        const videoInfo = await ffprobe(ffmpeg, 'input.mp4');
+        const videoInfo = await ffprobe(ffmpegInstance, 'input.mp4');
         const videoStream = videoInfo.streams.find((s: any) => s.codec_type === 'video');
         if (!videoStream) throw new Error("Could not find video stream in file.");
 
         const originalWidth = videoStream.width;
         const originalHeight = videoStream.height;
         
-        const scaledWidth = originalWidth * scale;
-        const scaledHeight = originalHeight * scale;
+        const scaledWidth = Math.round(originalWidth * scale);
+        const scaledHeight = Math.round(originalHeight * scale);
 
-        const cropWidth = canvasSize.width;
-        const cropHeight = canvasSize.height;
+        const cropWidth = Math.round(canvasSize.width);
+        const cropHeight = Math.round(canvasSize.height);
 
-        // The position (x, y) is the top-left of the scaled video relative to the canvas.
-        // The crop filter's x,y is the top-left corner of the crop rectangle relative to the *input video*.
-        // So we need to calculate the crop start point based on the pan.
-        const cropX = -x;
-        const cropY = -y;
+        const cropX = Math.round(-x);
+        const cropY = Math.round(-y);
         
-        const vfComplex = `[0:v]scale=${scaledWidth}:${scaledHeight} [scaled]; [scaled]crop=${cropWidth}:${cropHeight}:${cropX}:${cropY} [cropped]; [cropped][1:v]overlay=0:0`;
+        let vfComplex = `[0:v]scale=${scaledWidth}:${scaledHeight} [scaled]; [scaled]crop=${cropWidth}:${cropHeight}:${cropX}:${cropY} [cropped]; [cropped][1:v]overlay=0:0`;
         
-        const args = ['-i', 'input.mp4', '-i', 'overlay.png', '-filter_complex', vfComplex];
+        const args = ['-i', 'input.mp4', '-i', 'overlay.png'];
         
         // Add watermark if enabled
         if (appSettings.watermarkEnabled && appSettings.watermarkText) {
-            onProgress?.('Adding watermark...');
             const watermarkData = await createWatermarkOverlay(appSettings.watermarkText, canvasSize.width, canvasSize.height);
-            ffmpeg.FS('writeFile', 'watermark.png', watermarkData);
-            args.push('-i', 'watermark.png', '-filter_complex', '[0][1]overlay[bg];[bg][2]overlay');
-            // This is a simplified filter chain. A correct one is more complex. Let's adjust.
-            // Correct complex filter chain for 3 inputs (video, overlay, watermark)
-            const finalVfComplex = `[0:v]scale=${scaledWidth}:${scaledHeight} [scaled]; [scaled]crop=${cropWidth}:${cropHeight}:${cropX}:${cropY} [cropped]; [cropped][1:v]overlay=0:0 [with_overlay]; [with_overlay][2:v]overlay=0:0`;
-            args[3] = finalVfComplex; // Replace the old filter_complex
+            ffmpegInstance.FS('writeFile', 'watermark.png', watermarkData);
+            args.push('-i', 'watermark.png');
+            vfComplex = `[0:v]scale=${scaledWidth}:${scaledHeight}[scaled];[scaled]crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}[cropped];[cropped][1:v]overlay=0:0[with_overlay];[with_overlay][2:v]overlay=0:0`;
         }
+
+        args.push('-filter_complex', vfComplex);
 
         // Handle audio
         if (bgMedia.muted === false) {
-             // If there's an audio stream, copy it
             if (videoInfo.streams.some((s: any) => s.codec_type === 'audio')) {
                 args.push('-c:a', 'copy');
             }
@@ -207,11 +230,10 @@ export const exportMedia = async (
         
         args.push('output.mp4');
 
-        onProgress?.('Rendering video...');
-        await ffmpeg.run(...args);
+        await ffmpegInstance.run(...args);
         
-        onProgress?.('Finalizing...');
-        const data = ffmpeg.FS('readFile', 'output.mp4');
+        onProgress('Finalizing...');
+        const data = ffmpegInstance.FS('readFile', 'output.mp4');
         const blob = new Blob([data.buffer], { type: 'video/mp4' });
 
         return { blob, fileType: 'video' };
@@ -223,33 +245,31 @@ export const exportMedia = async (
 // Helper function to get video metadata using ffmpeg
 const ffprobe = async (ffmpegInstance: any, filePath: string) => {
     let info: any = {};
-    // Hacky way to capture ffprobe output since it logs to stderr
-    const originalLog = ffmpegInstance.getLog;
-    let output = '';
+    const output: string[] = [];
     ffmpegInstance.setLogger(({ message }: { message: string }) => {
-        output += message + '\n';
+        output.push(message);
     });
     
     try {
         await ffmpegInstance.run('-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', '-i', filePath);
     } catch (e) {
-        // ffprobe exits with non-zero code, which is expected. The output is still captured.
+        // ffprobe can exit with a non-zero code which is fine, as long as we get the output.
     } finally {
-        ffmpegInstance.setLogger(originalLog);
+        ffmpegInstance.setLogger(() => {}); // Clear logger
     }
     
+    const fullOutput = output.join('\n');
     try {
-        // Find the JSON part of the output
-        const jsonStart = output.indexOf('{');
-        const jsonEnd = output.lastIndexOf('}') + 1;
+        const jsonStart = fullOutput.indexOf('{');
+        const jsonEnd = fullOutput.lastIndexOf('}') + 1;
         if (jsonStart !== -1 && jsonEnd !== -1) {
-            const jsonString = output.substring(jsonStart, jsonEnd);
+            const jsonString = fullOutput.substring(jsonStart, jsonEnd);
             info = JSON.parse(jsonString);
         } else {
             throw new Error("Could not parse ffprobe output.");
         }
     } catch(e) {
-        console.error("FFProbe output parsing failed:", output);
+        console.error("FFProbe output parsing failed:", fullOutput);
         throw e;
     }
     return info;

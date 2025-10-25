@@ -263,7 +263,6 @@ const EditorScreen: React.FC = () => {
   const handleDownload = async () => {
     if (!bgMedia || !template || !canvasContainerRef.current || isProcessing) return;
     setIsProcessing(true);
-    setProcessingStatus('Initializing...');
     setGeneratedFile(null);
 
     try {
