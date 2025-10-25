@@ -5,7 +5,8 @@ import { LogoutIcon } from '../../components/shared/Icons';
 import { SubmissionStatus, Template } from '../../types';
 
 const UserProfileScreen: React.FC = () => {
-  const { currentUser, logout, templates, getDownloadsForTemplate, updateUsername, submitSuggestion, installPromptEvent, triggerInstallPrompt, notificationPermission, subscribeToNotifications } = useData();
+  // FIX: Destructure `templates` from useData to make it available in the component.
+  const { currentUser, logout, templates, adminTemplates, updateUsername, submitSuggestion, installPromptEvent, triggerInstallPrompt, notificationPermission, subscribeToNotifications } = useData();
   const navigate = useNavigate();
 
   const [newUsername, setNewUsername] = useState(currentUser?.name || '');
@@ -67,9 +68,14 @@ const UserProfileScreen: React.FC = () => {
   
   const creatorInsights = useMemo(() => {
       if (!currentUser) return { submitted: 0, approved: 0, rejected: 0, totalDownloads: 0 };
-      const mySubmissions = templates.filter(t => t.uploader_id === currentUser.id);
+      // User templates are not paginated, so `templates` is fine.
+      // But for consistency and to ensure all data is there, we could use adminTemplates if the user is an admin.
+      const sourceTemplates = currentUser.role === 'admin' ? adminTemplates : templates;
+      const mySubmissions = sourceTemplates.filter(t => t.uploader_id === currentUser.id);
       const approvedSubmissions = mySubmissions.filter(t => t.status === SubmissionStatus.APPROVED);
-      const totalDownloads = approvedSubmissions.reduce((sum, t) => sum + getDownloadsForTemplate(t.id), 0);
+
+      // PERFORMANCE FIX: Sum the downloadCount property directly instead of filtering the entire downloads collection.
+      const totalDownloads = approvedSubmissions.reduce((sum, t) => sum + (t.downloadCount || 0), 0);
       
       return {
           submitted: mySubmissions.length,
@@ -77,7 +83,7 @@ const UserProfileScreen: React.FC = () => {
           rejected: mySubmissions.filter(t => t.status === SubmissionStatus.REJECTED).length,
           totalDownloads
       }
-  }, [currentUser, templates, getDownloadsForTemplate]);
+  }, [currentUser, templates, adminTemplates]);
 
   if (!currentUser) {
     return null;

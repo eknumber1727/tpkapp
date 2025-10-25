@@ -189,6 +189,41 @@ const AppSettingsManagerScreen: React.FC = () => {
                             <p className="text-sm text-gray-500 mt-1">The ID for the specific banner ad unit.</p>
                         </div>
                     </div>
+
+                    {/* Watermark Settings Section */}
+                    <div className="pt-6 space-y-6">
+                        <h2 className="text-xl font-bold text-[#2C3E50]">Watermark Settings</h2>
+                         <div>
+                            <label htmlFor="watermarkEnabled" className="text-lg font-semibold text-[#2C3E50] mb-2 flex items-center justify-between">
+                                <span>Enable Watermark</span>
+                                <div className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        id="watermarkEnabled"
+                                        name="watermarkEnabled"
+                                        checked={settings.watermarkEnabled}
+                                        onChange={handleChange}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-orange-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF7A00]"></div>
+                                </div>
+                            </label>
+                            <p className="text-sm text-gray-500 mt-1">Adds a small text watermark to all downloaded images.</p>
+                        </div>
+                        <div>
+                            <label htmlFor="watermarkText" className="text-lg font-semibold text-[#2C3E50] mb-2 block">Watermark Text</label>
+                             <input
+                                type="text"
+                                id="watermarkText"
+                                name="watermarkText"
+                                value={settings.watermarkText}
+                                onChange={handleChange}
+                                placeholder="e.g., yoursite.com"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
+                            />
+                             <p className="text-sm text-gray-500 mt-1">The text that will appear as the watermark.</p>
+                        </div>
+                    </div>
                     
                     {successMessage && <p className="text-green-500 text-center !mt-4">{successMessage}</p>}
                     {errorMessage && <p className="text-red-500 text-center !mt-4">{errorMessage}</p>}

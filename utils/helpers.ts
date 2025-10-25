@@ -1,7 +1,8 @@
-import { AspectRatio } from '../types';
+import { AspectRatio, Layer, TextLayer, StickerLayer, SavedDesignData, AppSettings } from '../types';
 
 // Helper to rewrite Firebase Storage URLs to use the Netlify proxy
 const rewriteFirebaseUrl = (url: string): string => {
+    if (!url) return '';
     const firebaseBaseUrl = 'https://firebasestorage.googleapis.com';
     if (url.startsWith(firebaseBaseUrl)) {
         // Example: https://firebasestorage.googleapis.com/v0/b/....
@@ -13,12 +14,12 @@ const rewriteFirebaseUrl = (url: string): string => {
 };
 
 
-// A helper to draw image with transformations
-const drawTransformedImage = (ctx: CanvasRenderingContext2D, image: HTMLImageElement | HTMLVideoElement, transform: { x: number; y: number; scale: number; }) => {
+const drawTransformedMedia = (ctx: CanvasRenderingContext2D, media: HTMLImageElement | HTMLVideoElement, transform: SavedDesignData['bgMedia']) => {
     ctx.save();
+    // Translate to the center of where the media should be
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.scale, transform.scale);
-    ctx.drawImage(image, 0, 0);
+    ctx.drawImage(media, 0, 0);
     ctx.restore();
 };
 
@@ -51,10 +52,23 @@ const loadVideoFrame = (src: string): Promise<HTMLVideoElement> => {
     });
 }
 
+const drawWatermark = (ctx: CanvasRenderingContext2D, text: string) => {
+    ctx.save();
+    const padding = 20;
+    ctx.font = 'bold 16px Poppins';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    const textMetrics = ctx.measureText(text);
+    const x = ctx.canvas.width - textMetrics.width - padding;
+    const y = ctx.canvas.height - padding;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+};
+
+
 export const exportMedia = async (
-    userMedia: { src: string, type: 'image' | 'video' },
+    designData: SavedDesignData,
     templateImageSrc: string,
-    transform: { x: number; y: number; scale: number; },
+    appSettings: AppSettings,
     canvasSize: { width: number; height: number; },
     displaySize: { width: number; height: number; }
 ): Promise<Blob> => {
@@ -66,45 +80,82 @@ export const exportMedia = async (
         throw new Error('Could not get canvas context');
     }
 
-    try {
-        const templateImage = await loadImage(templateImageSrc);
-        let mediaElement: HTMLImageElement | HTMLVideoElement;
-
-        if (userMedia.type === 'image') {
-            mediaElement = await loadImage(userMedia.src);
-        } else {
-            mediaElement = await loadVideoFrame(userMedia.src);
-        }
-
-        // Calculate the scaling factor between the on-screen display and the export canvas
-        const scaleX = canvas.width / displaySize.width;
-        const scaleY = canvas.height / displaySize.height;
-        
-        // As we maintain aspect ratio, scaleX and scaleY should be the same. We can use one.
-        const exportTransform = {
-            x: transform.x * scaleX,
-            y: transform.y * scaleY,
-            scale: transform.scale * scaleX
-        };
-        
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawTransformedImage(ctx, mediaElement, exportTransform);
-        ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
-        
-        return await new Promise((resolve, reject) => {
-            canvas.toBlob((blob) => {
-                if (blob) {
-                    resolve(blob);
-                } else {
-                    reject(new Error('Failed to create blob from canvas.'));
-                }
-            }, 'image/png');
-        });
-
-    } catch (error) {
-        console.error("Error during media export:", error);
-        throw error; // Re-throw the error to be caught by the caller
+    // Load all images in parallel
+    const [templateImage, ...layerImages] = await Promise.all([
+        loadImage(templateImageSrc),
+        ...designData.layers.filter(l => l.type === 'sticker').map(l => loadImage((l as StickerLayer).src))
+    ]);
+    
+    // Load background media
+    let mediaElement: HTMLImageElement | HTMLVideoElement;
+    if (designData.bgMedia.type === 'image') {
+        mediaElement = await loadImage(designData.bgMedia.src);
+    } else {
+        mediaElement = await loadVideoFrame(designData.bgMedia.src);
     }
+
+    // Calculate scaling factor
+    const scaleFactor = canvas.width / displaySize.width;
+
+    // --- Start Drawing ---
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Draw Background Media
+    const exportBgTransform = {
+        ...designData.bgMedia,
+        x: designData.bgMedia.x * scaleFactor,
+        y: designData.bgMedia.y * scaleFactor,
+        scale: designData.bgMedia.scale * scaleFactor
+    };
+    drawTransformedMedia(ctx, mediaElement, exportBgTransform);
+
+    // 2. Draw Template Overlay
+    ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
+
+    // 3. Draw Stickers & Text
+    let stickerImageIndex = 0;
+    for (const layer of designData.layers) {
+        ctx.save();
+        // Apply transformations (position, scale, rotation)
+        const tx = layer.x * scaleFactor;
+        const ty = layer.y * scaleFactor;
+        ctx.translate(tx, ty);
+        ctx.rotate(layer.rotation * Math.PI / 180);
+        ctx.scale(layer.scale * scaleFactor, layer.scale * scaleFactor);
+
+        if (layer.type === 'text') {
+            const textLayer = layer as TextLayer;
+            ctx.font = `bold ${textLayer.fontSize}px ${textLayer.fontFamily}`;
+            ctx.fillStyle = textLayer.color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(textLayer.text, 0, 0); // Draw at new origin
+        } else if (layer.type === 'sticker') {
+            const stickerLayer = layer as StickerLayer;
+            const stickerImage = layerImages[stickerImageIndex++];
+            if (stickerImage) {
+                // Draw centered on new origin
+                ctx.drawImage(stickerImage, -stickerLayer.width / 2, -stickerLayer.height / 2, stickerLayer.width, stickerLayer.height);
+            }
+        }
+        ctx.restore();
+    }
+    
+    // 4. Draw Watermark if enabled
+    if (appSettings.watermarkEnabled && appSettings.watermarkText) {
+        drawWatermark(ctx, appSettings.watermarkText);
+    }
+        
+    return await new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (blob) {
+                resolve(blob);
+            } else {
+                reject(new Error('Failed to create blob from canvas.'));
+            }
+        }, 'image/png');
+    });
 };
 
 export const getAspectRatioDecimal = (ratio: AspectRatio): number => {

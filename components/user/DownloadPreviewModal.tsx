@@ -30,6 +30,7 @@ const DownloadPreviewModal: React.FC<DownloadPreviewModalProps> = ({ imageUrl, o
                 await navigator.share({
                     files: [file],
                     title: 'My Timepass Katta Creation',
+                    text: 'make your creative now visit: www.timepasskatta.app',
                 });
             } else {
                 alert("Sharing is not supported on this device, or there's nothing to share.");

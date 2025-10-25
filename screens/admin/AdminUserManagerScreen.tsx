@@ -9,26 +9,36 @@ interface UserWithStats extends User {
 }
 
 const AdminUserManagerScreen: React.FC = () => {
-    const { users, adminTemplates, downloads } = useData();
+    const { users, adminTemplates } = useData();
     const [searchTerm, setSearchTerm] = useState('');
 
     const usersWithStats = useMemo((): UserWithStats[] => {
-        const uploadCounts = new Map<string, number>();
+        const statsMap = new Map<string, { uploadCount: number; downloadCount: number }>();
+
+        // Pre-populate map for all users
+        users.forEach(user => {
+            statsMap.set(user.id, { uploadCount: 0, downloadCount: 0 });
+        });
+
+        // Calculate stats in a single loop over templates
         adminTemplates.forEach(template => {
-            uploadCounts.set(template.uploader_id, (uploadCounts.get(template.uploader_id) || 0) + 1);
+            const userId = template.uploader_id;
+            if (statsMap.has(userId)) {
+                const currentStats = statsMap.get(userId)!;
+                currentStats.uploadCount += 1;
+                currentStats.downloadCount += (template.downloadCount || 0);
+            }
         });
 
-        const downloadCounts = new Map<string, number>();
-        downloads.forEach(download => {
-            downloadCounts.set(download.user_id, (downloadCounts.get(download.user_id) || 0) + 1);
+        return users.map(user => {
+            const stats = statsMap.get(user.id) || { uploadCount: 0, downloadCount: 0 };
+            return {
+                ...user,
+                uploadCount: stats.uploadCount,
+                downloadCount: stats.downloadCount,
+            };
         });
-
-        return users.map(user => ({
-            ...user,
-            uploadCount: uploadCounts.get(user.id) || 0,
-            downloadCount: downloadCounts.get(user.id) || 0,
-        }));
-    }, [users, adminTemplates, downloads]);
+    }, [users, adminTemplates]);
 
     const filteredUsers = useMemo(() => {
         return usersWithStats.filter(user => {

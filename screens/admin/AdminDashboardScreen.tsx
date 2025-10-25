@@ -13,13 +13,14 @@ const StatCard: React.FC<{ title: string; value: number | string }> = ({ title, 
 const AdminDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
   // FIX: Switched to adminTemplates to get accurate stats from all templates
-  const { adminTemplates, downloads, users } = useData();
+  const { adminTemplates, users } = useData();
   
   const stats = {
     totalTemplates: adminTemplates.length,
     activeTemplates: adminTemplates.filter(t => t.is_active).length,
     pendingSubmissions: adminTemplates.filter(r => r.status === SubmissionStatus.PENDING).length,
-    totalDownloads: downloads.length, // This is total downloads across all users. Can be improved.
+    // PERFORMANCE FIX: Sum counts from templates instead of fetching all download documents
+    totalDownloads: adminTemplates.reduce((sum, t) => sum + (t.downloadCount || 0), 0),
     totalUsers: users.length,
   };
 
@@ -31,6 +32,7 @@ const AdminDashboardScreen: React.FC = () => {
         <StatCard title="Active Templates" value={stats.activeTemplates} />
         <StatCard title="Pending Submissions" value={stats.pendingSubmissions} />
         <StatCard title="Total Users" value={stats.totalUsers} />
+        <StatCard title="Total Downloads" value={stats.totalDownloads} />
       </div>
 
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">

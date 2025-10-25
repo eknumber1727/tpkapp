@@ -25,18 +25,18 @@ const AdminTemplateManagerScreen: React.FC = () => {
     const [errorMessage, setErrorMessage] = useState('');
 
     const filteredTemplates = useMemo(() => {
-        // FIX: Use adminTemplates to show all templates to the admin
         return adminTemplates.filter(template => {
             const lowerSearchTerm = searchTerm.toLowerCase();
             if (!lowerSearchTerm) return true;
+            // FIX: Add safe-guards to prevent crash if properties are null/undefined on older templates
             return (
-                template.title.toLowerCase().includes(lowerSearchTerm) ||
-                template.uploader_username.toLowerCase().includes(lowerSearchTerm) ||
-                template.status.toLowerCase().includes(lowerSearchTerm) ||
-                template.uniqueCode.toLowerCase().includes(lowerSearchTerm) ||
-                template.tags.some(tag => tag.toLowerCase().includes(lowerSearchTerm))
+                (template.title || '').toLowerCase().includes(lowerSearchTerm) ||
+                (template.uploader_username || '').toLowerCase().includes(lowerSearchTerm) ||
+                (template.status || '').toLowerCase().includes(lowerSearchTerm) ||
+                (template.uniqueCode || '').toLowerCase().includes(lowerSearchTerm) ||
+                (template.tags || []).some(tag => (tag || '').toLowerCase().includes(lowerSearchTerm))
             );
-        }); // No sort here as adminTemplates is already sorted by date
+        });
     }, [adminTemplates, searchTerm]);
 
     const openDeleteModal = (template: Template) => {

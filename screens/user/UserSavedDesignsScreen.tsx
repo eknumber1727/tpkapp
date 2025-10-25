@@ -1,18 +1,18 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
+import { SavedDesign, SavedDesignData } from '../../types';
 
 const UserSavedDesignsScreen: React.FC = () => {
-  const { currentUser, savedDesigns, templates } = useData();
+  const { currentUser, savedDesigns, getTemplateById } = useData();
   const navigate = useNavigate();
   const myDesigns = savedDesigns.filter(d => d.user_id === currentUser?.id);
 
   const getTemplatePreview = (templateId: string) => {
-      // FIX: Changed `preview_url` to `composite_preview_url` as it's the correct property on the Template type.
-      return templates.find(t => t.id === templateId)?.composite_preview_url;
+      return getTemplateById(templateId)?.composite_preview_url;
   }
   
-  const handleEditDraft = (design: any) => {
+  const handleEditDraft = (design: SavedDesign) => {
       navigate(`/editor/${design.template_id}/draft/${design.id}`);
   }
 

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Role, SubmissionStatus } from '../types';
-import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, Language } from '../types';
+import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, Language, Sticker, SavedDesignData } from '../types';
 // FIX: Import firebase default for compat types, and named exports for service instances.
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,11 +13,13 @@ interface DataContextType {
   templates: Template[]; // Paginated for users
   adminTemplates: Template[]; // All templates for admin
   bookmarks: Bookmark[];
+  bookmarkedTemplates: Template[]; // Specifically fetched bookmarked templates
   likes: Like[];
   savedDesigns: SavedDesign[];
   downloads: Download[];
   categories: Category[];
   languages: Language[];
+  stickers: Sticker[];
   suggestions: Suggestion[];
   notifications: Notification[];
   appSettings: AppSettings;
@@ -28,13 +30,14 @@ interface DataContextType {
   notificationPermission: NotificationPermission;
 
   // Auth
-  login: (email: string, pass: string) => Promise<User | void>;
-  signup: (name: string, email: string, pass: string) => Promise<User | void>;
-  startSession: (user: User) => void;
+  login: (email: string, pass: string) => Promise<void>;
+  signup: (name: string, email: string, pass: string) => Promise<void>;
   logout: () => void;
   
   // Templates
   fetchMoreTemplates: () => void;
+  getTemplatesByCreatorId: (creatorId: string) => Promise<Template[]>;
+
 
   // User Actions
   getTemplateById: (templateId: string) => Template | undefined;
@@ -46,7 +49,6 @@ interface DataContextType {
   saveDesign: (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => Promise<void>;
   addDownload: (downloadData: Omit<Download, 'id' | 'user_id' | 'timestamp'>) => Promise<void>;
   submitTemplate: (submissionData: Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'status' | 'is_active' | 'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
-  getDownloadsForTemplate: (templateId: string) => number;
   updateUsername: (newUsername: string) => Promise<void>;
   submitSuggestion: (text: string) => Promise<void>;
   subscribeToNotifications: () => Promise<void>;
@@ -61,6 +63,8 @@ interface DataContextType {
   deleteCategory: (categoryId: string) => Promise<void>;
   addLanguage: (name: string) => Promise<void>;
   deleteLanguage: (languageId: string) => Promise<void>;
+  addSticker: (name: string, file: File) => Promise<void>;
+  deleteSticker: (stickerId: string) => Promise<void>;
   updateAppSettings: (settings: Partial<AppSettings>) => Promise<void>;
   uploadAdminFile: (file: File | Blob, path: string) => Promise<string>;
   sendNotification: (title: string, body: string) => Promise<void>;
@@ -88,6 +92,8 @@ const defaultAppSettings: AppSettings = {
     adSenseSlotId: '',
     faviconUrl: '',
     featuredTemplates: [],
+    watermarkEnabled: true,
+    watermarkText: 'www.timepasskatta.app'
 };
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -95,11 +101,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [templates, setTemplates] = useState<Template[]>([]);
   const [adminTemplates, setAdminTemplates] = useState<Template[]>([]); // For admin use
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [bookmarkedTemplates, setBookmarkedTemplates] = useState<Template[]>([]);
   const [likes, setLikes] = useState<Like[]>([]);
   const [savedDesigns, setSavedDesigns] = useState<SavedDesign[]>([]);
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [languages, setLanguages] = useState<Language[]>([]);
+  const [stickers, setStickers] = useState<Sticker[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
@@ -171,7 +179,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     id: user.uid, 
                     name: userDataFromDb.name || 'User',
                     email: userDataFromDb.email || user.email || '',
-                    emailVerified: userDataFromDb.emailVerified,
                     photo_url: userDataFromDb.photo_url || `https://i.pravatar.cc/150?u=${user.uid}`,
                     role: userDataFromDb.role || Role.USER,
                     creator_id: userDataFromDb.creator_id || '',
@@ -185,6 +192,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } else {
             setCurrentUser(null);
             localStorage.removeItem('timepass-katta-user');
+            // CLEANUP: Clear user-specific data on logout to prevent flash of old content
+            setBookmarks([]);
+            setSavedDesigns([]);
+            setDownloads([]);
+            setLikes([]);
         }
         setLoading(false);
     });
@@ -200,7 +212,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 id: doc.id,
                 name: data.name,
                 email: data.email,
-                emailVerified: data.emailVerified,
                 photo_url: data.photo_url,
                 role: data.role,
                 creator_id: data.creator_id,
@@ -218,6 +229,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const unsubLanguages = db.collection("languages").onSnapshot((snapshot) => {
         setLanguages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Language)));
     }, (error) => console.error("Error fetching languages:", error));
+    
+    const unsubStickers = db.collection("stickers").orderBy("created_at", "desc").onSnapshot((snapshot) => {
+        setStickers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Sticker)));
+    }, (error) => console.error("Error fetching stickers:", error));
 
     const unsubSuggestions = db.collection("suggestions").orderBy("created_at", "desc").onSnapshot((snapshot) => {
         setSuggestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Suggestion)));
@@ -243,6 +258,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         unsubUsers();
         unsubCategories();
         unsubLanguages();
+        unsubStickers();
         unsubSuggestions();
         unsubAppSettings();
         unsubNotifications();
@@ -268,7 +284,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
 
     const unsubDesigns = db.collection("savedDesigns").where("user_id", "==", currentUser.id).onSnapshot((snapshot) => {
-        setSavedDesigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), updated_at: toISOStringSafe(doc.data().updated_at) } as SavedDesign)));
+        setSavedDesigns(snapshot.docs.map(doc => {
+            const data = doc.data();
+            // Ensure layers_json is parsed correctly
+            const layers_json = typeof data.layers_json === 'string' ? JSON.parse(data.layers_json) : data.layers_json;
+            return { id: doc.id, ...data, layers_json, updated_at: toISOStringSafe(data.updated_at) } as SavedDesign;
+        }));
     });
     
     const unsubDownloads = db.collection("downloads").where("user_id", "==", currentUser.id).onSnapshot((snapshot) => {
@@ -282,6 +303,40 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         unsubLikes();
     };
   }, [currentUser]);
+
+  // *** BUG FIX: Dedicated effect to fetch full bookmarked template data ***
+  useEffect(() => {
+    if (!currentUser || bookmarks.length === 0) {
+        setBookmarkedTemplates([]);
+        return;
+    }
+
+    const bookmarkedIds = bookmarks.map(b => b.template_id);
+    // Firestore 'in' queries are limited to 10 items. We must batch them.
+    const fetchPromises: Promise<firebase.firestore.QuerySnapshot>[] = [];
+    for (let i = 0; i < bookmarkedIds.length; i += 10) {
+        const chunk = bookmarkedIds.slice(i, i + 10);
+        if (chunk.length > 0) {
+            fetchPromises.push(db.collection('templates').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get());
+        }
+    }
+    
+    Promise.all(fetchPromises).then(snapshots => {
+        const fetchedTemplates: Template[] = [];
+        snapshots.forEach(snapshot => {
+            snapshot.forEach(doc => {
+                fetchedTemplates.push({
+                    id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
+                } as Template);
+            });
+        });
+        setBookmarkedTemplates(fetchedTemplates);
+    }).catch(error => {
+        console.error("Error fetching bookmarked templates:", error);
+    });
+
+  }, [bookmarks, currentUser]); // Rerun when bookmarks list changes
+
 
   // *** PERFORMANCE: Real-time paginated listener for users ***
   useEffect(() => {
@@ -362,7 +417,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setTemplatesLoading(false);
   };
 
-  const signup = async (name: string, email: string, pass: string): Promise<User | void> => {
+  const signup = async (name: string, email: string, pass: string): Promise<void> => {
     const userCredential = await auth.createUserWithEmailAndPassword(email, pass);
     const user = userCredential.user;
     if (!user) {
@@ -373,7 +428,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const newUser = {
       name,
       email,
-      emailVerified: true, // No verification needed
       photo_url: `https://i.pravatar.cc/150?u=${user.uid}`,
       role: Role.USER,
       creator_id,
@@ -382,66 +436,35 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       fcmTokens: [],
     };
     await db.collection("users").doc(user.uid).set(newUser);
-    const appUser: User = {
-      id: user.uid,
-      name: newUser.name,
-      email: newUser.email,
-      emailVerified: newUser.emailVerified,
-      photo_url: newUser.photo_url,
-      role: newUser.role,
-      creator_id: newUser.creator_id,
-      created_at: new Date().toISOString(),
-      lastUsernameChangeAt: null,
-      fcmTokens: [],
-    };
-    startSession(appUser);
-    return appUser;
+    // No need to set current user here, onAuthStateChanged will handle it
   };
   
-  const login = async (email: string, pass: string): Promise<User | void> => {
-    const userCredential = await auth.signInWithEmailAndPassword(email, pass);
-    const user = userCredential.user;
-    if (!user) {
-      throw new Error("Login failed.");
-    }
-    const userDoc = await db.collection("users").doc(user.uid).get();
-    if (!userDoc.exists) {
-        throw new Error("User data not found in database.");
-    }
-
-    const userDataFromDb = userDoc.data() as UserFromFirestore;
-    const appUser: User = {
-      id: user.uid,
-      name: userDataFromDb.name,
-      email: userDataFromDb.email,
-      emailVerified: userDataFromDb.emailVerified,
-      photo_url: userDataFromDb.photo_url,
-      role: userDataFromDb.role,
-      creator_id: userDataFromDb.creator_id,
-      created_at: toISOStringSafe(userDataFromDb.created_at),
-      lastUsernameChangeAt: toISOStringSafeOrNull(userDataFromDb.lastUsernameChangeAt),
-      fcmTokens: userDataFromDb.fcmTokens || [],
-    };
-    startSession(appUser);
-    return appUser;
+  const login = async (email: string, pass: string): Promise<void> => {
+    await auth.signInWithEmailAndPassword(email, pass);
+     // No need to set current user here, onAuthStateChanged will handle it
   }
-
-  const startSession = (user: User) => {
-    setCurrentUser(user);
-    localStorage.setItem('timepass-katta-user', JSON.stringify(user));
-  };
 
   const logout = async () => {
     await auth.signOut();
-    setCurrentUser(null);
-    localStorage.removeItem('timepass-katta-user');
+    // State clearing is handled by the onAuthStateChanged listener
   };
 
   const getTemplateById = (templateId: string) => {
     // Admin will have all templates, user will have paginated ones
     const sourceArray = currentUser?.role === Role.ADMIN ? adminTemplates : templates;
-    return sourceArray.find(t => t.id === templateId);
+    // Also check bookmarked templates for users, as it might not be in the paginated list
+    const found = sourceArray.find(t => t.id === templateId) || bookmarkedTemplates.find(t => t.id === templateId);
+    return found;
   }
+
+  const getTemplatesByCreatorId = async (creatorId: string): Promise<Template[]> => {
+    const q = db.collection('templates').where('uploader_id', '==', creatorId).where('is_active', '==', true);
+    const snapshot = await q.get();
+    return snapshot.docs.map(doc => ({
+        id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
+    } as Template));
+  };
+
 
   const getIsBookmarked = (templateId: string) => {
     if (!currentUser) return false;
@@ -492,22 +515,25 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const saveDesign = async (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => {
     if (!currentUser) return;
     
+    // Convert complex object to JSON string for Firestore
+    const layersJsonString = JSON.stringify(designData.layers_json);
+
     if (designData.id) {
         const docRef = db.collection("savedDesigns").doc(designData.id);
-        const dataToSave = {
+        await docRef.set({
             ...designData,
+            layers_json: layersJsonString,
             user_id: currentUser.id,
             updated_at: firebase.firestore.FieldValue.serverTimestamp(),
-        };
-        await docRef.set(dataToSave, { merge: true });
+        }, { merge: true });
     } else {
         const { id, ...restOfData } = designData; 
-        const dataToSave = {
+        await db.collection("savedDesigns").add({
             ...restOfData,
+            layers_json: layersJsonString,
             user_id: currentUser.id,
             updated_at: firebase.firestore.FieldValue.serverTimestamp(),
-        };
-        await db.collection("savedDesigns").add(dataToSave);
+        });
     }
   };
   
@@ -573,10 +599,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
     await templateDocRef.set(newSubmission);
   };
-
-  const getDownloadsForTemplate = (templateId: string) => {
-    return downloads.filter(d => d.template_id === templateId).length;
-  }
 
   const updateUsername = async (newUsername: string) => {
       if (!currentUser) throw new Error('No user logged in.');
@@ -722,9 +744,39 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const deleteLanguage = async (languageId: string) => {
         if (!currentUser || currentUser.role !== Role.ADMIN) return;
+
+        const languageToDelete = languages.find(l => l.id === languageId);
+        if (!languageToDelete) return;
+        
+        const q = db.collection("templates").where("language", "==", languageToDelete.name);
+        const querySnapshot = await q.get();
+        if (!querySnapshot.empty) {
+            throw new Error('This language is in use by one or more templates and cannot be deleted.');
+        }
         await db.collection("languages").doc(languageId).delete();
     };
   
+    const addSticker = async (name: string, file: File) => {
+        if (!currentUser || currentUser.role !== Role.ADMIN) return;
+        const id = uuidv4();
+        const url = await uploadFile(file, `stickers/${id}`);
+        await db.collection("stickers").doc(id).set({
+            name,
+            url,
+            created_at: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    };
+
+    const deleteSticker = async (stickerId: string) => {
+        if (!currentUser || currentUser.role !== Role.ADMIN) return;
+        try {
+            await storage.ref(`stickers/${stickerId}`).delete();
+        } catch(e) {
+            console.error("Sticker file may not exist in storage, continuing deletion from DB.", e);
+        }
+        await db.collection("stickers").doc(stickerId).delete();
+    };
+
   const updateAppSettings = async (settings: Partial<AppSettings>) => {
       if (!currentUser || currentUser.role !== Role.ADMIN) return;
       await db.collection("settings").doc("app").set(settings, { merge: true });
@@ -747,11 +799,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const value = {
-    users, templates, adminTemplates, bookmarks, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
-    login, signup, startSession, logout,
-    fetchMoreTemplates,
-    getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, getDownloadsForTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
-    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, addLanguage, deleteLanguage, updateAppSettings, uploadAdminFile, sendNotification,
+    users, templates, adminTemplates, bookmarks, bookmarkedTemplates, likes, savedDesigns, downloads, categories, languages, stickers, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
+    login, signup, logout,
+    fetchMoreTemplates, getTemplatesByCreatorId,
+    getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
+    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, addLanguage, deleteLanguage, addSticker, deleteSticker, updateAppSettings, uploadAdminFile, sendNotification,
     installPromptEvent, triggerInstallPrompt
   };
 

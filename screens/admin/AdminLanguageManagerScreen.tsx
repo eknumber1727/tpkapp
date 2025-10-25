@@ -106,7 +106,7 @@ const AdminLanguageManagerScreen: React.FC = () => {
                 onClose={() => setIsModalOpen(false)}
                 onConfirm={handleConfirmDelete}
                 title="Confirm Deletion"
-                message={`Are you sure you want to delete the language "${languageToDelete?.name}"? This may affect existing templates.`}
+                message={`Are you sure you want to delete the language "${languageToDelete?.name}"? This action cannot be undone.`}
             />
         </>
     );

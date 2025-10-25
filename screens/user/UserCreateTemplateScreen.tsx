@@ -23,11 +23,14 @@ const UserCreateTemplateScreen: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
-        // Set default language if available
+        // Set default category and language if available
+        if (categories.length > 0 && !category) {
+            setCategory(categories[0].name);
+        }
         if (languages.length > 0 && !language) {
             setLanguage(languages[0].name);
         }
-    }, [languages, language]);
+    }, [categories, languages, category, language]);
     
     // Effect to clean up blob URLs to prevent memory leaks
     useEffect(() => {
@@ -110,10 +113,12 @@ const UserCreateTemplateScreen: React.FC = () => {
                 if(currentUser?.role === Role.ADMIN) {
                     await adminSubmitTemplate(submissionData, { pngFile, bgFile, compositeFile: blob });
                     alert('Template published successfully!');
-                    navigate('/templates');
+                    // UX FIX: Navigate to the template list for admins
+                    navigate('/templates'); 
                 } else {
                     await submitTemplate(submissionData, { pngFile, bgFile, compositeFile: blob });
                     alert('Template submitted for review. Thank you!');
+                    // UX FIX: Navigate home for users
                     navigate('/');
                 }
             } catch(err) {

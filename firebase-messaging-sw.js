@@ -1,6 +1,8 @@
 // Import and initialize the Firebase SDK
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/messaging';
+// Use importScripts for service workers
+self.importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
+self.importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js');
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyBRn-dfdvPQ6ELMGDsFKTvUngez6Ly4yn4",

@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon } from '../../components/shared/Icons';
+import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon, TrashIcon } from '../../components/shared/Icons';
 import { exportMedia } from '../../utils/helpers';
-import { AspectRatio, SavedDesignLayer } from '../../types';
+import { AspectRatio, SavedDesignData, Layer, TextLayer, StickerLayer, Sticker } from '../../types';
 import { ASPECT_RATIOS } from '../../constants';
+import { v4 as uuidv4 } from 'uuid';
+
+const FONT_FACES = ['Poppins', 'Lobster', 'Pacifico', 'Caveat', 'Roboto Slab'];
 
 const DownloadCompleteModal: React.FC<{ onHome: () => void; onContinue: () => void; }> = ({ onHome, onContinue }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
         <div className="bg-white p-8 rounded-[30px] shadow-lg text-center max-w-sm mx-4">
             <CheckCircleIcon className="w-16 h-16 text-green-500 mx-auto" />
             <h2 className="text-2xl font-bold text-[#2C3E50] mt-4">Success!</h2>
@@ -30,35 +33,72 @@ const DownloadCompleteModal: React.FC<{ onHome: () => void; onContinue: () => vo
     </div>
 );
 
+const StickerModal: React.FC<{ onClose: () => void; onSelect: (sticker: Sticker) => void }> = ({ onClose, onSelect }) => {
+    const { stickers } = useData();
+    return (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black bg-opacity-50" onClick={onClose}>
+            <div className="bg-white rounded-[30px] shadow-lg max-w-lg w-11/12 h-3/4 flex flex-col p-4" onClick={e => e.stopPropagation()}>
+                <h2 className="text-xl font-bold text-[#2C3E50] mb-4 text-center">Select a Sticker</h2>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 overflow-y-auto p-2 flex-grow">
+                    {stickers.map(sticker => (
+                        <button key={sticker.id} onClick={() => onSelect(sticker)} className="aspect-square bg-gray-100 rounded-lg p-2 hover:bg-gray-200 transition">
+                            <img src={sticker.url} alt={sticker.name} className="w-full h-full object-contain" />
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    )
+}
 
 const EditorScreen: React.FC = () => {
   const { templateId, designId } = useParams<{ templateId: string, designId?: string }>();
   const navigate = useNavigate();
-  const { getTemplateById, getSavedDesignById, saveDesign, addDownload } = useData();
+  const { getTemplateById, getSavedDesignById, saveDesign, addDownload, appSettings } = useData();
 
   const template = templateId ? getTemplateById(templateId) : undefined;
   const existingDraft = designId ? getSavedDesignById(designId) : undefined;
   
-  const [userMedia, setUserMedia] = useState<{ src: string, type: 'image' | 'video' } | null>(null);
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  // Editor State
+  const [bgMedia, setBgMedia] = useState<SavedDesignData['bgMedia'] | null>(null);
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [activeRatio, setActiveRatio] = useState<AspectRatio>(template?.ratio_default || '4:5');
+  
+  // UI State
   const [isDownloadComplete, setIsDownloadComplete] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isStickerModalOpen, setIsStickerModalOpen] = useState(false);
   
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0 });
+  // Interaction Refs
   const mediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
-  
-  const [isMobile, setIsMobile] = useState(false);
-  
+  const interactionState = useRef({
+      isDragging: false,
+      dragStart: { x: 0, y: 0 },
+      isPinching: false,
+      initialPinchDist: 0,
+      initialScale: 1,
+  }).current;
+
+  // Load draft or set defaults
   useEffect(() => {
-    // A simple check for mobile based on Web Share API support
-    setIsMobile(!!(navigator.share && navigator.canShare));
-  }, []);
+    if (existingDraft && template) {
+        // Handle both string and object formats for backward compatibility
+        const designData = typeof existingDraft.layers_json === 'string' 
+            ? JSON.parse(existingDraft.layers_json) as SavedDesignData
+            : existingDraft.layers_json;
+
+        setBgMedia(designData.bgMedia);
+        setLayers(designData.layers || []);
+        setActiveRatio(existingDraft.ratio);
+    } else if (template) {
+        setActiveRatio(template.ratio_default);
+    }
+  }, [existingDraft, template]);
 
   const autoFitMedia = useCallback(() => {
-    if (!mediaRef.current || !canvasContainerRef.current) return;
+    if (!mediaRef.current || !canvasContainerRef.current || !bgMedia) return;
     
     const media = mediaRef.current;
     const container = canvasContainerRef.current;
@@ -75,34 +115,29 @@ const EditorScreen: React.FC = () => {
     const mediaRatio = mediaWidth / mediaHeight;
     
     let scale;
-    // We want to "cover" the container
-    if (mediaRatio > containerRatio) {
-      // Media is wider, so match height and let width overflow
+    if (mediaRatio > containerRatio) { // Media is wider
       scale = containerHeight / mediaHeight;
-    } else {
-      // Media is taller, so match width and let height overflow
+    } else { // Media is taller
       scale = containerWidth / mediaWidth;
     }
     
     const x = (containerWidth - (mediaWidth * scale)) / 2;
     const y = (containerHeight - (mediaHeight * scale)) / 2;
     
-    setTransform({ x, y, scale });
-  }, []);
+    setBgMedia(prev => prev ? ({ ...prev, x, y, scale }) : null);
+  }, [bgMedia]);
 
   useEffect(() => {
-    if (userMedia && mediaRef.current) {
+    if (bgMedia && mediaRef.current) {
       const media = mediaRef.current;
-      const eventToListen = userMedia.type === 'video' ? 'loadeddata' : 'load';
+      const eventToListen = bgMedia.type === 'video' ? 'loadeddata' : 'load';
       
       const handler = () => {
-        // If it's a new upload (not from a saved draft), auto-fit it.
         if (!existingDraft) {
           autoFitMedia();
         }
       };
       
-      // If media is already loaded (e.g., from cache), run handler immediately
       if ((media instanceof HTMLImageElement && media.complete) || (media instanceof HTMLVideoElement && media.readyState > 0)) {
         handler();
       } else {
@@ -111,84 +146,171 @@ const EditorScreen: React.FC = () => {
       
       return () => media.removeEventListener(eventToListen, handler);
     }
-  }, [userMedia, existingDraft, autoFitMedia]);
+  }, [bgMedia?.src, existingDraft, autoFitMedia]);
 
   useEffect(() => {
-    if (existingDraft && template) {
-        setUserMedia({ src: existingDraft.layers_json.bgMediaUrl, type: existingDraft.layers_json.bgType });
-        setTransform({ x: existingDraft.layers_json.x, y: existingDraft.layers_json.y, scale: existingDraft.layers_json.scale });
-        setActiveRatio(existingDraft.ratio);
-    } else if (template) {
-        setActiveRatio(template.ratio_default);
+    if (bgMedia?.type === 'video' && mediaRef.current) {
+        const videoElement = mediaRef.current as HTMLVideoElement;
+        videoElement.muted = true;
+        videoElement.play().catch(error => console.warn("Video autoplay prevented.", error));
     }
-  }, [existingDraft, template]);
+  }, [bgMedia?.src]);
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const url = URL.createObjectURL(file);
       const type = file.type.startsWith('video') ? 'video' : 'image';
-      setUserMedia({ src: url, type });
-      // The auto-fit logic is now handled by the useEffect hook.
+      setBgMedia({ src: url, type, x: 0, y: 0, scale: 1 });
     }
   };
   
-  const resetTransform = () => {
-      autoFitMedia();
+  const resetTransform = () => autoFitMedia();
+  
+  // --- Layer Management ---
+  const bringLayerToFront = (layerId: string) => {
+    setLayers(prevLayers => {
+        const layerToMove = prevLayers.find(l => l.id === layerId);
+        if (!layerToMove) return prevLayers;
+        const otherLayers = prevLayers.filter(l => l.id !== layerId);
+        return [...otherLayers, layerToMove];
+    });
+  };
+
+  const addTextLayer = () => {
+      const newTextLayer: TextLayer = {
+          id: uuidv4(),
+          type: 'text',
+          text: 'Hello World',
+          fontFamily: 'Poppins',
+          fontSize: 40,
+          color: '#FFFFFF',
+          x: 150,
+          y: 150,
+          scale: 1,
+          rotation: 0,
+          width: 200, // default width
+      };
+      setLayers(prev => [...prev, newTextLayer]);
+      setSelectedLayerId(newTextLayer.id);
   }
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    dragStart.current = { x: e.clientX - transform.x, y: e.clientY - transform.y };
+  const addStickerLayer = (sticker: Sticker) => {
+    const newStickerLayer: StickerLayer = {
+      id: uuidv4(),
+      type: 'sticker',
+      stickerId: sticker.id,
+      src: sticker.url,
+      x: 150,
+      y: 150,
+      scale: 1,
+      rotation: 0,
+      width: 100, // Default size
+      height: 100,
+    };
+    setLayers(prev => [...prev, newStickerLayer]);
+    setSelectedLayerId(newStickerLayer.id);
+    setIsStickerModalOpen(false);
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isDragging) {
-      setTransform(prev => ({ ...prev, x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y }));
+  const updateLayer = (layerId: string, updates: Partial<Layer>) => {
+      setLayers(prev => prev.map(l => l.id === layerId ? ({ ...l, ...updates } as Layer) : l));
+  }
+  
+  const deleteLayer = (layerId: string) => {
+      setLayers(prev => prev.filter(l => l.id !== layerId));
+      setSelectedLayerId(null);
+  }
+
+  const selectedLayer = layers.find(l => l.id === selectedLayerId);
+
+  // --- Interaction Handlers ---
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.target !== e.currentTarget) return; // Prevent events on children (layers)
+    interactionState.isDragging = true;
+    interactionState.dragStart = { x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (interactionState.isDragging && bgMedia) {
+        const dx = e.clientX - interactionState.dragStart.x;
+        const dy = e.clientY - interactionState.dragStart.y;
+        interactionState.dragStart = { x: e.clientX, y: e.clientY };
+        setBgMedia(prev => prev ? ({ ...prev, x: prev.x + dx, y: prev.y + dy }) : null);
     }
   };
 
-  const handleMouseUp = () => setIsDragging(false);
+  const handlePointerUp = () => {
+    interactionState.isDragging = false;
+  };
 
   const handleWheel = (e: React.WheelEvent) => {
-    // FIX: Only zoom if the Ctrl key is pressed to prevent accidental zooming on scroll.
-    if (e.ctrlKey) {
+    if (e.ctrlKey && bgMedia) { // Desktop zoom
         e.preventDefault();
         const scaleAmount = e.deltaY * -0.001;
-        setTransform(prev => ({...prev, scale: Math.max(0.1, prev.scale + scaleAmount)}));
+        setBgMedia(prev => prev ? ({...prev, scale: Math.max(0.1, prev.scale + scaleAmount)}) : null);
     }
   };
+  
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && bgMedia) { // Pinching
+        e.preventDefault();
+        interactionState.isPinching = true;
+        interactionState.initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        interactionState.initialScale = bgMedia.scale;
+    } else if (e.touches.length === 1 && e.target === e.currentTarget) { // Panning
+        e.preventDefault();
+        interactionState.isDragging = true;
+        interactionState.dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  }
+  
+  const handleTouchMove = (e: React.TouchEvent) => {
+      if (interactionState.isPinching && e.touches.length === 2 && bgMedia) {
+          e.preventDefault();
+          const currentDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          const scale = (currentDist / interactionState.initialPinchDist) * interactionState.initialScale;
+          setBgMedia(prev => prev ? ({ ...prev, scale: Math.max(0.1, scale) }) : null);
+      } else if (interactionState.isDragging && e.touches.length === 1 && bgMedia) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - interactionState.dragStart.x;
+          const dy = e.touches[0].clientY - interactionState.dragStart.y;
+          interactionState.dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+          setBgMedia(prev => prev ? ({...prev, x: prev.x + dx, y: prev.y + dy}) : null);
+      }
+  }
+  
+  const handleTouchEnd = (e: React.TouchEvent) => {
+      if (e.touches.length < 2) interactionState.isPinching = false;
+      if (e.touches.length < 1) interactionState.isDragging = false;
+  }
+  
+  // Drag handler for layers
+  const handleLayerDrag = (e: React.DragEvent, layerId: string) => {
+      const containerRect = canvasContainerRef.current?.getBoundingClientRect();
+      if (!containerRect) return;
+      const x = e.clientX - containerRect.left;
+      const y = e.clientY - containerRect.top;
+      // Draggable sets x/y to 0 on drop, so we only update if it's not 0
+      if (e.clientX !== 0 || e.clientY !== 0) {
+        updateLayer(layerId, { x, y });
+      }
+  };
 
-  useEffect(() => {
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging]);
 
   const handleSaveDraft = () => {
-    if (!userMedia || !template) return;
-    const layers_json: SavedDesignLayer = {
-        bgMediaUrl: userMedia.src,
-        bgType: userMedia.type,
-        ...transform,
-        width: mediaRef.current?.offsetWidth || 0,
-        height: mediaRef.current?.offsetHeight || 0,
-        opacity: 1,
-        extraTexts: []
-    };
-    saveDesign({ id: existingDraft?.id, template_id: template.id, ratio: activeRatio, layers_json });
+    if (!bgMedia || !template) return;
+    const designData: SavedDesignData = { bgMedia, layers };
+    saveDesign({ id: existingDraft?.id, template_id: template.id, ratio: activeRatio, layers_json: designData });
     alert('Draft Saved!');
   };
 
   const handleDownload = async () => {
-    if (!userMedia || !template || !canvasContainerRef.current || isDownloading) return;
-
+    if (!bgMedia || !template || !canvasContainerRef.current || isDownloading) return;
     setIsDownloading(true);
 
     try {
+        const designData: SavedDesignData = { bgMedia, layers };
         const displaySize = { 
             width: canvasContainerRef.current.offsetWidth,
             height: canvasContainerRef.current.offsetHeight
@@ -198,7 +320,7 @@ const EditorScreen: React.FC = () => {
             height: displaySize.height * 2
         };
 
-        const blob = await exportMedia(userMedia, template.png_url, transform, canvasSize, displaySize);
+        const blob = await exportMedia(designData, template.png_url, appSettings, canvasSize, displaySize);
         const fileName = 'timepass-katta-creation.png';
         const file = new File([blob], fileName, { type: 'image/png' });
 
@@ -211,16 +333,14 @@ const EditorScreen: React.FC = () => {
             setIsDownloadComplete(true);
         };
 
-        // Use Web Share API for mobile
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        if (navigator.share && navigator.canShare({ files: [file] })) {
             await navigator.share({
                 files: [file],
                 title: 'My Timepass Katta Creation',
-                text: 'Check out this cool image I made!',
+                text: 'make your creative now visit: www.timepasskatta.app',
             });
             onSuccessfulExport();
         } else {
-            // Fallback for desktop
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = fileName;
@@ -259,7 +379,7 @@ const EditorScreen: React.FC = () => {
   return (
     <>
     <div className="min-h-screen flex flex-col bg-[#F8F9FA]">
-      <header className="flex items-center justify-between p-4 bg-white shadow-sm z-10">
+      <header className="flex items-center justify-between p-4 bg-white shadow-sm z-30">
         <button onClick={() => navigate(-1)} className="p-2 rounded-full hover:bg-gray-100">
           <ChevronLeftIcon className="w-6 h-6 text-[#2C3E50]" />
         </button>
@@ -268,37 +388,105 @@ const EditorScreen: React.FC = () => {
             <button onClick={resetTransform} className="p-2 rounded-full hover:bg-gray-100"><ResetIcon className="w-6 h-6 text-[#2C3E50]" /></button>
         </div>
       </header>
+      
+       <div className="w-full bg-white shadow-sm p-2 flex justify-center gap-2">
+            <button onClick={addTextLayer} className="px-4 py-2 text-sm bg-gray-100 rounded-lg">Add Text</button>
+            <button onClick={() => setIsStickerModalOpen(true)} className="px-4 py-2 text-sm bg-gray-100 rounded-lg">Add Sticker</button>
+        </div>
 
       <div className="flex-grow flex flex-col items-center p-4">
+        {/* Editor Canvas */}
         <div
           ref={canvasContainerRef}
-          className={`w-full max-w-md bg-gray-200 rounded-[20px] relative overflow-hidden shadow-inner touch-none ${getAspectRatioClasses(activeRatio)}`}
+          className={`w-full max-w-md bg-gray-200 rounded-[20px] relative overflow-hidden shadow-inner ${getAspectRatioClasses(activeRatio)}`}
           onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onClick={() => setSelectedLayerId(null)}
         >
-          {userMedia ? (
+          {bgMedia ? (
             <>
+              {/* Background Media */}
               <div 
                 className="absolute top-0 left-0 origin-top-left"
-                style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, cursor: isDragging ? 'grabbing' : 'grab' }}
-                onMouseDown={handleMouseDown}
+                style={{ transform: `translate(${bgMedia.x}px, ${bgMedia.y}px) scale(${bgMedia.scale})`, cursor: interactionState.isDragging ? 'grabbing' : 'grab' }}
               >
-                {userMedia.type === 'image' ? (
-                  <img ref={mediaRef as React.RefObject<HTMLImageElement>} src={userMedia.src} alt="User upload" className="pointer-events-none max-w-none" />
+                {bgMedia.type === 'image' ? (
+                  <img ref={mediaRef as React.RefObject<HTMLImageElement>} src={bgMedia.src} alt="User upload" className="pointer-events-none max-w-none" />
                 ) : (
-                  <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={userMedia.src} autoPlay muted loop className="pointer-events-none max-w-none" />
+                  <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={bgMedia.src} autoPlay muted loop playsInline className="pointer-events-none max-w-none" />
                 )}
               </div>
+
+              {/* Dynamic Layers */}
+              {layers.map(layer => (
+                <div
+                    key={layer.id}
+                    draggable
+                    onDragEnd={(e) => handleLayerDrag(e, layer.id)}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      setSelectedLayerId(layer.id);
+                      bringLayerToFront(layer.id);
+                    }}
+                    className={`absolute z-20 cursor-move border-2 ${selectedLayerId === layer.id ? 'border-dashed border-blue-500' : 'border-transparent'}`}
+                    style={{ 
+                        transform: `translate(${layer.x}px, ${layer.y}px) scale(${layer.scale}) rotate(${layer.rotation}deg)`,
+                        transformOrigin: 'center center',
+                        // zIndex is handled by array order
+                    }}
+                >
+                    {layer.type === 'text' && (
+                        <div style={{ fontFamily: layer.fontFamily, fontSize: layer.fontSize, color: layer.color, whiteSpace: 'nowrap' }}>
+                            {layer.text}
+                        </div>
+                    )}
+                    {layer.type === 'sticker' && (
+                        <img src={layer.src} alt="sticker" style={{ width: layer.width, height: layer.height }} className="pointer-events-none" />
+                    )}
+                </div>
+              ))}
+
+              {/* Template Overlay */}
               <img src={template.png_url} alt="Template overlay" className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none z-10" />
             </>
           ) : (
              <div className="w-full h-full flex flex-col items-center justify-center">
-              <label htmlFor="upload-media" className="cursor-pointer bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2811] font-bold py-3 px-6 rounded-full shadow-lg">
+              <label htmlFor="upload-media" className="cursor-pointer bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2C11] font-bold py-3 px-6 rounded-full shadow-lg">
                 Upload Photo/Video
               </label>
               <input type="file" id="upload-media" className="hidden" onChange={handleMediaUpload} accept="image/*,video/*" />
             </div>
           )}
         </div>
+        
+        {/* Layer Editing Panel */}
+        {selectedLayer && (
+            <div className="w-full max-w-md mt-4 bg-white p-4 rounded-[20px] shadow-sm space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-[#2C3E50]">Edit Layer</h3>
+                    <button onClick={() => deleteLayer(selectedLayer.id)} className="p-1 text-red-500"><TrashIcon className="w-5 h-5"/></button>
+                </div>
+                {selectedLayer.type === 'text' && (
+                    <>
+                        <input type="text" value={selectedLayer.text} onChange={e => updateLayer(selectedLayer.id, { text: e.target.value })} className="w-full p-2 border rounded-lg" />
+                        <div className="grid grid-cols-3 gap-2">
+                            <input type="color" value={selectedLayer.color} onChange={e => updateLayer(selectedLayer.id, { color: e.target.value })} className="w-full h-10 p-1 border rounded-lg" />
+                            <input type="number" value={selectedLayer.fontSize} onChange={e => updateLayer(selectedLayer.id, { fontSize: parseInt(e.target.value) })} className="w-full p-2 border rounded-lg" />
+                            <select value={selectedLayer.fontFamily} onChange={e => updateLayer(selectedLayer.id, { fontFamily: e.target.value })} className="w-full p-2 border rounded-lg bg-white">
+                                {FONT_FACES.map(font => <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>)}
+                            </select>
+                        </div>
+                    </>
+                )}
+                {selectedLayer.type === 'sticker' && <p className="text-sm text-gray-500 text-center">Move or delete the sticker.</p>}
+            </div>
+        )}
         
         <div className="w-full max-w-md mt-4">
             <div className="flex justify-center gap-2 mb-4">
@@ -308,21 +496,9 @@ const EditorScreen: React.FC = () => {
             </div>
 
             <div className="flex gap-2">
-                <button onClick={handleSaveDraft} disabled={!userMedia} className="w-full text-center p-3 rounded-[20px] bg-white text-[#2C3E50] font-bold disabled:opacity-50 shadow-sm">Save Draft</button>
-                <button onClick={handleDownload} disabled={!userMedia || isDownloading} className="w-full text-center p-3 rounded-[20px] bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2811] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                    {isDownloading ? 'Processing...' : (
-                        isMobile ? (
-                            <>
-                                <ShareIcon className="w-6 h-6" />
-                                <span>Share / Save</span>
-                            </>
-                        ) : (
-                            <>
-                                <DownloadIcon className="w-6 h-6" />
-                                <span>Download Now</span>
-                            </>
-                        )
-                    )}
+                <button onClick={handleSaveDraft} disabled={!bgMedia} className="w-full text-center p-3 rounded-[20px] bg-white text-[#2C3E50] font-bold disabled:opacity-50 shadow-sm">Save Draft</button>
+                <button onClick={handleDownload} disabled={!bgMedia || isDownloading} className="w-full text-center p-3 rounded-[20px] bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2C11] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                    {isDownloading ? 'Processing...' : (<> <DownloadIcon className="w-6 h-6" /> <span>Download</span> </>)}
                 </button>
             </div>
         </div>
@@ -337,6 +513,7 @@ const EditorScreen: React.FC = () => {
             onContinue={() => setIsDownloadComplete(false)}
         />
     )}
+    {isStickerModalOpen && <StickerModal onClose={() => setIsStickerModalOpen(false)} onSelect={addStickerLayer} />}
     </>
   );
 };

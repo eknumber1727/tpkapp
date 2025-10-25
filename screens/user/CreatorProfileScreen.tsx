@@ -1,28 +1,41 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import TemplateCard from '../../components/user/TemplateCard';
 import { ChevronLeftIcon } from '../../components/shared/Icons';
+import { Template } from '../../types';
+import TemplateCardSkeleton from '../../components/user/TemplateCardSkeleton';
 
 const CreatorProfileScreen: React.FC = () => {
   const { creatorId } = useParams<{ creatorId: string }>();
-  const { users, templates, loading } = useData();
+  const { users, getTemplatesByCreatorId } = useData();
   const navigate = useNavigate();
+  
+  const [creatorTemplates, setCreatorTemplates] = useState<Template[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const creator = useMemo(() => {
     return users.find(user => user.id === creatorId);
   }, [users, creatorId]);
+  
+  useEffect(() => {
+      if (creatorId) {
+          setLoading(true);
+          getTemplatesByCreatorId(creatorId)
+              .then(data => {
+                  setCreatorTemplates(data);
+              })
+              .catch(error => {
+                  console.error("Failed to fetch creator templates:", error);
+              })
+              .finally(() => {
+                  setLoading(false);
+              });
+      }
+  }, [creatorId, getTemplatesByCreatorId]);
 
-  const creatorTemplates = useMemo(() => {
-    if (!creator) return [];
-    return templates.filter(template => template.uploader_id === creator.id && template.is_active);
-  }, [templates, creator]);
 
-  if (loading) {
-    return <div className="p-4 text-center">Loading creator profile...</div>;
-  }
-
-  if (!creator) {
+  if (!creator && !loading) {
     return <div className="p-4 text-center">Creator not found.</div>;
   }
 
@@ -33,13 +46,27 @@ const CreatorProfileScreen: React.FC = () => {
             <ChevronLeftIcon className="w-6 h-6 text-[#2C3E50]" />
         </button>
         <div className="flex-grow flex flex-col items-center">
-            <img src={creator.photo_url} alt={creator.name} className="w-20 h-20 rounded-full shadow-lg border-4 border-white" />
-            <h1 className="text-2xl font-bold text-[#2C3E50] mt-3">@{creator.name}</h1>
-            <p className="text-sm text-[#7F8C8D]">{creatorTemplates.length} templates</p>
+            {creator ? (
+                <>
+                    <img src={creator.photo_url} alt={creator.name} className="w-20 h-20 rounded-full shadow-lg border-4 border-white" />
+                    <h1 className="text-2xl font-bold text-[#2C3E50] mt-3">@{creator.name}</h1>
+                    <p className="text-sm text-[#7F8C8D]">{creatorTemplates.length} templates</p>
+                </>
+            ) : (
+                <div className="animate-pulse flex flex-col items-center">
+                    <div className="w-20 h-20 rounded-full bg-gray-200"></div>
+                    <div className="h-8 bg-gray-200 rounded-md w-40 mt-3"></div>
+                    <div className="h-4 bg-gray-200 rounded-md w-24 mt-2"></div>
+                </div>
+            )}
         </div>
       </div>
       
-      {creatorTemplates.length > 0 ? (
+      {loading ? (
+        <div className="grid grid-cols-2 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <TemplateCardSkeleton key={i} />)}
+        </div>
+      ) : creatorTemplates.length > 0 ? (
         <div className="grid grid-cols-2 gap-4">
           {creatorTemplates.map(template => (
             <TemplateCard key={template.id} template={template} />

@@ -3,15 +3,7 @@ import { useData } from '../../context/DataContext';
 import TemplateCard from '../../components/user/TemplateCard';
 
 const UserBookmarksScreen: React.FC = () => {
-  const { currentUser, templates, bookmarks } = useData();
-
-  const bookmarkedTemplateIds = bookmarks
-    .filter(b => b.user_id === currentUser?.id)
-    .map(b => b.template_id);
-    
-  const bookmarkedTemplates = templates.filter(template =>
-    bookmarkedTemplateIds.includes(template.id)
-  );
+  const { bookmarkedTemplates } = useData();
 
   return (
     <div className="p-4">

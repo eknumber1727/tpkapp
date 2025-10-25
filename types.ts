@@ -19,6 +19,13 @@ export interface Language {
   name: string;
 }
 
+export interface Sticker {
+  id: string;
+  name: string;
+  url: string;
+  created_at: string;
+}
+
 export enum SubmissionStatus {
     PENDING = 'pending',
     APPROVED = 'approved',
@@ -32,7 +39,6 @@ export interface UserFromFirestore {
   id: string;
   name: string;
   email: string;
-  emailVerified: boolean;
   photo_url: string;
   role: Role;
   password?: string;
@@ -47,7 +53,6 @@ export interface User {
   id: string; // user email or UUID
   name: string;
   email: string;
-  emailVerified: boolean;
   photo_url: string;
   role: Role;
   password?: string;
@@ -96,23 +101,47 @@ export interface Like {
     created_at: string; // ISO Date string
 }
 
-export interface SavedDesignLayer {
-    bgMediaUrl: string;
-    bgType: 'image' | 'video';
-    scale: number;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    opacity: number;
-    extraTexts: {
-        text: string;
-        font: string;
-        size: number;
-        color: string;
+// --- New Layer System for Editor ---
+
+interface LayerBase {
+  id: string;
+  type: 'text' | 'sticker';
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  z?: number; // For stacking order
+}
+
+export interface TextLayer extends LayerBase {
+  type: 'text';
+  text: string;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+  width: number;
+}
+
+export interface StickerLayer extends LayerBase {
+  type: 'sticker';
+  stickerId: string;
+  src: string;
+  width: number;
+  height: number;
+}
+
+export type Layer = TextLayer | StickerLayer;
+
+// Represents the entire state of the editor canvas
+export interface SavedDesignData {
+    bgMedia: {
+        src: string;
+        type: 'image' | 'video';
+        scale: number;
         x: number;
         y: number;
-    }[];
+    };
+    layers: Layer[];
 }
 
 export interface SavedDesign {
@@ -120,9 +149,10 @@ export interface SavedDesign {
     user_id: string;
     template_id: string;
     ratio: AspectRatio;
-    layers_json: SavedDesignLayer;
+    layers_json: SavedDesignData;
     updated_at: string; // ISO Date string
 }
+
 
 export interface Download {
     id: string;
@@ -152,6 +182,8 @@ export interface AppSettings {
   adSenseSlotId: string;
   faviconUrl: string;
   featuredTemplates: string[];
+  watermarkEnabled: boolean;
+  watermarkText: string;
 }
 
 export interface Notification {
