@@ -1,31 +1,25 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Role, SubmissionStatus } from '../types';
-import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, Language, SavedDesignData } from '../types';
-// FIX: import firebase to use its namespace for FieldValue, etc.
+import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, SavedDesignData } from '../types';
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
-
-const TEMPLATES_PER_PAGE = 12;
 
 interface DataContextType {
   // State
   users: User[];
-  templates: Template[]; // Paginated for users
-  adminTemplates: Template[]; // All templates for admin
+  templates: Template[]; // All templates for users and admin
   bookmarks: Bookmark[];
   bookmarkedTemplates: Template[]; // Specifically fetched bookmarked templates
   likes: Like[];
   savedDesigns: SavedDesign[];
   downloads: Download[];
   categories: Category[];
-  languages: Language[];
   suggestions: Suggestion[];
   notifications: Notification[];
   appSettings: AppSettings;
   currentUser: User | null;
   loading: boolean;
   templatesLoading: boolean;
-  hasMoreTemplates: boolean;
   notificationPermission: NotificationPermission;
 
   // Auth
@@ -34,7 +28,6 @@ interface DataContextType {
   logout: () => void;
   
   // Templates
-  fetchMoreTemplates: () => void;
   getTemplatesByCreatorId: (creatorId: string) => Promise<Template[]>;
 
 
@@ -47,24 +40,22 @@ interface DataContextType {
   getSavedDesignById: (designId: string) => SavedDesign | undefined;
   saveDesign: (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => Promise<void>;
   addDownload: (downloadData: Omit<Download, 'id' | 'user_id' | 'timestamp'>) => Promise<void>;
-  submitTemplate: (submissionData: Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'status' | 'is_active' | 'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
+  submitTemplate: (submissionData: Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'status' | 'is_active' | 'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
   updateUsername: (newUsername: string) => Promise<void>;
   submitSuggestion: (text: string) => Promise<void>;
   subscribeToNotifications: () => Promise<void>;
 
   // Admin Actions
-  adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
+  adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
   updateTemplate: (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>) => Promise<void>;
   deleteTemplate: (templateId: string) => Promise<void>;
   approveTemplate: (templateId: string) => Promise<void>;
   rejectTemplate: (templateId: string) => Promise<void>;
   addCategory: (name: CategoryName) => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
-  addLanguage: (name: string) => Promise<void>;
-  deleteLanguage: (languageId: string) => Promise<void>;
+  sendNotification: (title: string, body: string) => Promise<void>;
   updateAppSettings: (settings: Partial<AppSettings>) => Promise<void>;
   uploadAdminFile: (file: File | Blob, path: string) => Promise<string>;
-  sendNotification: (title: string, body: string) => Promise<void>;
 
   // PWA Install
   installPromptEvent: any | null;
@@ -80,29 +71,27 @@ const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
 };
 
 const defaultAppSettings: AppSettings = {
-    aboutUs: '',
-    terms: '',
-    contactEmail: '',
+    aboutUs: 'Welcome to our app! This content can be edited by the admin.',
+    terms: 'Please read our terms and conditions. This content can be edited by the admin.',
+    contactEmail: 'contact@example.com',
     adsEnabled: false,
     adSensePublisherId: '',
     adSenseSlotId: '',
+    // Fix: Add default values for new AppSettings properties.
     faviconUrl: '',
-    featuredTemplates: [],
-    watermarkEnabled: true,
-    watermarkText: 'www.timepasskatta.app'
+    watermarkEnabled: false,
+    watermarkText: '',
 };
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [adminTemplates, setAdminTemplates] = useState<Template[]>([]); // For admin use
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [bookmarkedTemplates, setBookmarkedTemplates] = useState<Template[]>([]);
   const [likes, setLikes] = useState<Like[]>([]);
   const [savedDesigns, setSavedDesigns] = useState<SavedDesign[]>([]);
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [languages, setLanguages] = useState<Language[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
@@ -110,11 +99,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [installPromptEvent, setInstallPromptEvent] = useState<any | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
-
-  // State for pagination
-  const [lastTemplateVisible, setLastTemplateVisible] = useState<any | null>(null); // firebase.firestore.QueryDocumentSnapshot
   const [templatesLoading, setTemplatesLoading] = useState(true);
-  const [hasMoreTemplates, setHasMoreTemplates] = useState(true);
 
   useEffect(() => {
     if ('Notification' in window) {
@@ -187,7 +172,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } else {
             setCurrentUser(null);
             localStorage.removeItem('timepass-katta-user');
-            // CLEANUP: Clear user-specific data on logout to prevent flash of old content
             setBookmarks([]);
             setSavedDesigns([]);
             setDownloads([]);
@@ -221,10 +205,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const unsubCategories = db.collection("categories").onSnapshot((snapshot) => {
         setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
     }, (error) => console.error("Error fetching categories:", error));
-
-    const unsubLanguages = db.collection("languages").onSnapshot((snapshot) => {
-        setLanguages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Language)));
-    }, (error) => console.error("Error fetching languages:", error));
     
     const unsubSuggestions = db.collection("suggestions").orderBy("created_at", "desc").onSnapshot((snapshot) => {
         setSuggestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at) } as Suggestion)));
@@ -246,13 +226,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, (error) => console.error("Error fetching app settings:", error));
 
+    const unsubTemplates = db.collection("templates").orderBy("created_at", "desc").onSnapshot((snapshot) => {
+        const allTemplates = snapshot.docs.map(doc => ({
+            id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
+        } as Template));
+        setTemplates(allTemplates);
+        setTemplatesLoading(false);
+    }, (error) => {
+        console.error("Error fetching templates:", error);
+        setTemplatesLoading(false);
+    });
+
     return () => {
         unsubUsers();
         unsubCategories();
-        unsubLanguages();
         unsubSuggestions();
         unsubAppSettings();
         unsubNotifications();
+        unsubTemplates();
     };
   }, []);
   
@@ -277,7 +268,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const unsubDesigns = db.collection("savedDesigns").where("user_id", "==", currentUser.id).onSnapshot((snapshot) => {
         setSavedDesigns(snapshot.docs.map(doc => {
             const data = doc.data();
-            // Ensure layers_json is parsed correctly
             const layers_json = typeof data.layers_json === 'string' ? JSON.parse(data.layers_json) : data.layers_json;
             return { id: doc.id, ...data, layers_json, updated_at: toISOStringSafe(data.updated_at) } as SavedDesign;
         }));
@@ -295,7 +285,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [currentUser]);
 
-  // *** BUG FIX: Dedicated effect to fetch full bookmarked template data ***
+  // Dedicated effect to fetch full bookmarked template data
   useEffect(() => {
     if (!currentUser || bookmarks.length === 0) {
         setBookmarkedTemplates([]);
@@ -303,8 +293,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const bookmarkedIds = bookmarks.map(b => b.template_id);
-    // Firestore 'in' queries are limited to 10 items. We must batch them.
-    const fetchPromises: Promise<any>[] = []; // Promise<firebase.firestore.QuerySnapshot>[]
+    const fetchPromises: Promise<any>[] = []; 
     for (let i = 0; i < bookmarkedIds.length; i += 10) {
         const chunk = bookmarkedIds.slice(i, i + 10);
         if (chunk.length > 0) {
@@ -326,87 +315,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.error("Error fetching bookmarked templates:", error);
     });
 
-  }, [bookmarks, currentUser]); // Rerun when bookmarks list changes
-
-
-  // *** PERFORMANCE: Real-time paginated listener for users ***
-  useEffect(() => {
-    if (currentUser?.role === Role.ADMIN) {
-        setTemplates([]);
-        setTemplatesLoading(false);
-        setHasMoreTemplates(false);
-        return;
-    }
-    setTemplatesLoading(true);
-    const q = db.collection("templates").orderBy("created_at", "desc").limit(TEMPLATES_PER_PAGE);
-
-    const unsub = q.onSnapshot((snapshot) => {
-        if (snapshot.empty) {
-            setTemplates([]);
-            setHasMoreTemplates(false);
-        } else {
-            const lastVisible = snapshot.docs[snapshot.docs.length - 1];
-            setLastTemplateVisible(lastVisible);
-            setHasMoreTemplates(snapshot.docs.length === TEMPLATES_PER_PAGE);
-            const fetchedTemplates = snapshot.docs.map(doc => ({
-                id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
-            })) as Template[];
-            setTemplates(fetchedTemplates);
-        }
-        setTemplatesLoading(false);
-    }, (error) => {
-        console.error("Error fetching initial templates:", error);
-        setTemplatesLoading(false);
-    });
-    
-    return () => unsub();
-  }, [currentUser]);
-
-  // *** PERFORMANCE: Listener for ALL templates for ADMINS ONLY ***
-  useEffect(() => {
-    if (currentUser?.role !== Role.ADMIN) {
-        setAdminTemplates([]);
-        return;
-    }
-    const unsub = db.collection("templates").orderBy("created_at", "desc").onSnapshot((snapshot) => {
-        const allTemplates = snapshot.docs.map(doc => ({
-            id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
-        } as Template));
-        setAdminTemplates(allTemplates);
-    }, (error) => console.error("Error fetching all templates for admin:", error));
-    return () => unsub();
-  }, [currentUser]);
-
-
-  const fetchMoreTemplates = async () => {
-      if (!lastTemplateVisible || !hasMoreTemplates || templatesLoading || currentUser?.role === Role.ADMIN) return;
-      
-      setTemplatesLoading(true);
-
-      const q = db.collection("templates")
-          .orderBy("created_at", "desc")
-          .startAfter(lastTemplateVisible)
-          .limit(TEMPLATES_PER_PAGE);
-
-      const snapshot = await q.get();
-
-      if (snapshot.empty) {
-          setHasMoreTemplates(false);
-          setTemplatesLoading(false);
-          return;
-      }
-
-      const lastVisible = snapshot.docs[snapshot.docs.length - 1];
-      setLastTemplateVisible(lastVisible);
-      setHasMoreTemplates(snapshot.docs.length === TEMPLATES_PER_PAGE);
-      
-      const newTemplates = snapshot.docs.map(doc => ({
-          id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
-      })) as Template[];
-
-      setTemplates(prev => [...prev, ...newTemplates]);
-      setTemplatesLoading(false);
-  };
+  }, [bookmarks, currentUser]);
 
   const signup = async (name: string, email: string, pass: string): Promise<void> => {
     const userCredential = await auth.createUserWithEmailAndPassword(email, pass);
@@ -438,8 +347,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const getTemplateById = (templateId: string) => {
-    const sourceArray = currentUser?.role === Role.ADMIN ? adminTemplates : templates;
-    const found = sourceArray.find(t => t.id === templateId) || bookmarkedTemplates.find(t => t.id === templateId);
+    const found = templates.find(t => t.id === templateId) || bookmarkedTemplates.find(t => t.id === templateId);
     return found;
   }
 
@@ -501,11 +409,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const saveDesign = async (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => {
     if (!currentUser) return;
     
-    const bgMedia = designData.layers_json.bgMedia;
-    if (bgMedia.type === 'video' && bgMedia.muted === undefined) {
-        bgMedia.muted = true;
-    }
-
     const layersJsonString = JSON.stringify(designData.layers_json);
 
     if (designData.id) {
@@ -545,37 +448,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await batch.commit();
   };
   
-  const generateUniqueCode = async (): Promise<string> => {
-    const counterRef = db.collection('counters').doc('templates');
-    let newCode = 'TK0001';
-
-    await db.runTransaction(async (transaction: any) => {
-        const counterDoc = await transaction.get(counterRef);
-        const currentCount = counterDoc.exists ? (counterDoc.data()?.count || 0) : 0;
-        const newCount = currentCount + 1;
-        newCode = `TK${String(newCount).padStart(4, '0')}`;
-        transaction.set(counterRef, { count: newCount }, { merge: true });
-    });
-
-    return newCode;
-  };
-  
-  const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
+  const submitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
     if(!currentUser || currentUser.role !== Role.USER) return;
     
     const templateDocRef = db.collection('templates').doc();
     const templateId = templateDocRef.id;
 
-    const [png_url, bg_preview_url, composite_preview_url, uniqueCode] = await Promise.all([
+    const [png_url, bg_preview_url, composite_preview_url] = await Promise.all([
         uploadFile(files.pngFile, `templates/${templateId}/overlay.png`),
         uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`),
         uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`),
-        generateUniqueCode()
     ]);
 
     const newSubmission = {
         ...submissionData,
-        uniqueCode,
         png_url,
         bg_preview_url,
         composite_preview_url,
@@ -625,7 +511,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setNotificationPermission(permission);
 
         if (permission === 'granted') {
-            const vapidKey = (import.meta as any).env.VITE_FIREBASE_MESSAGING_VAPID_KEY;
+            // Fix: Property 'env' does not exist on type 'ImportMeta'. This is resolved by adding type definitions in types.ts.
+            const vapidKey = import.meta.env.VITE_FIREBASE_MESSAGING_VAPID_KEY;
             if (!vapidKey) {
                 throw new Error("VAPID key for notifications is not configured.");
             }
@@ -652,22 +539,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   // Admin functions
-  const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'uniqueCode' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
+  const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
       const templateDocRef = db.collection('templates').doc();
       const templateId = templateDocRef.id;
 
-      const [png_url, bg_preview_url, composite_preview_url, uniqueCode] = await Promise.all([
+      const [png_url, bg_preview_url, composite_preview_url] = await Promise.all([
         uploadFile(files.pngFile, `templates/${templateId}/overlay.png`),
         uploadFile(files.bgFile, `templates/${templateId}/bg_preview.jpg`),
         uploadFile(files.compositeFile, `templates/${templateId}/composite_preview.jpg`),
-        generateUniqueCode()
     ]);
 
 
       const newTemplate = {
           ...submissionData,
-          uniqueCode,
           png_url,
           bg_preview_url,
           composite_preview_url,
@@ -684,15 +569,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateTemplate = async (templateId: string, templateData: Partial<Omit<Template, 'id' | 'uploader_id' | 'uploader_username' | 'created_at' | 'status'>>) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
-
-      const updateData: any = { ...templateData };
-      
-      await db.collection("templates").doc(templateId).update(updateData);
+      await db.collection("templates").doc(templateId).update(templateData);
   };
 
   const deleteTemplate = async (templateId: string) => {
     if (!currentUser || currentUser.role !== Role.ADMIN) return;
-    const template = adminTemplates.find(t => t.id === templateId);
+    const template = templates.find(t => t.id === templateId);
     if(template){
         try { await storage.ref(`templates/${templateId}/overlay.png`).delete(); } catch(e) { console.error(e); }
         try { await storage.ref(`templates/${templateId}/bg_preview.jpg`).delete(); } catch(e) { console.error(e); }
@@ -730,37 +612,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     await db.collection("categories").doc(categoryId).delete();
   };
-
-    const addLanguage = async (name: string) => {
-        if (!currentUser || currentUser.role !== Role.ADMIN || !name.trim()) return;
-        await db.collection("languages").add({ name: name.trim() });
-    };
-
-    const deleteLanguage = async (languageId: string) => {
-        if (!currentUser || currentUser.role !== Role.ADMIN) return;
-
-        const languageToDelete = languages.find(l => l.id === languageId);
-        if (!languageToDelete) return;
-        
-        const q = db.collection("templates").where("language", "==", languageToDelete.name);
-        const querySnapshot = await q.get();
-        if (!querySnapshot.empty) {
-            throw new Error('This language is in use by one or more templates and cannot be deleted.');
-        }
-        await db.collection("languages").doc(languageId).delete();
-    };
-  
-  const updateAppSettings = async (settings: Partial<AppSettings>) => {
-      if (!currentUser || currentUser.role !== Role.ADMIN) return;
-      await db.collection("settings").doc("app").set(settings, { merge: true });
-  }
-  
-  const uploadAdminFile = async (file: File | Blob, path: string): Promise<string> => {
-      if (!currentUser || currentUser.role !== Role.ADMIN) {
-          throw new Error("You don't have permission to perform this action.");
-      }
-      return uploadFile(file, path);
-  };
   
   const sendNotification = async (title: string, body: string) => {
       if (!currentUser || currentUser.role !== Role.ADMIN) return;
@@ -770,14 +621,35 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           sent_at: firebase.firestore.FieldValue.serverTimestamp(),
       });
   };
+
+  const updateAppSettings = async (settings: Partial<AppSettings>) => {
+      if (!currentUser || currentUser.role !== Role.ADMIN) {
+          throw new Error("Permission denied.");
+      }
+      await db.collection("settings").doc("app").set(settings, { merge: true });
+  };
   
-  const value = {
-    users, templates, adminTemplates, bookmarks, bookmarkedTemplates, likes, savedDesigns, downloads, categories, languages, suggestions, notifications, appSettings, currentUser, loading, templatesLoading, hasMoreTemplates, notificationPermission,
+  const uploadAdminFile = async (file: File | Blob, path: string): Promise<string> => {
+      if (!currentUser || currentUser.role !== Role.ADMIN) {
+          throw new Error("Permission denied.");
+      }
+      return uploadFile(file, path);
+  };
+
+  const value: DataContextType = {
+    users, templates,
+    bookmarks, bookmarkedTemplates, likes, savedDesigns, downloads, categories, suggestions, notifications, 
+    appSettings,
+    currentUser, loading, templatesLoading,
+    notificationPermission,
     login, signup, logout,
-    fetchMoreTemplates, getTemplatesByCreatorId,
+    getTemplatesByCreatorId,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
-    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory, addLanguage, deleteLanguage, updateAppSettings, uploadAdminFile, sendNotification,
-    installPromptEvent, triggerInstallPrompt
+    adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory,
+    sendNotification,
+    updateAppSettings,
+    uploadAdminFile,
+    installPromptEvent, triggerInstallPrompt,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

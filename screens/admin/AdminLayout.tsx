@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { LogoutIcon, MenuIcon, XIcon, DashboardIcon, TemplateManagerIcon, SubmissionsIcon, CategoryIcon, SuggestionIcon, BellIcon, SettingsIcon, LanguageIcon, StarIcon, UsersIcon } from '../../components/shared/Icons';
+import { LogoutIcon, MenuIcon, XIcon, DashboardIcon, TemplateManagerIcon, SubmissionsIcon, CategoryIcon, SuggestionIcon, BellIcon } from '../../components/shared/Icons';
 
 const NavLinks: React.FC<{ onLinkClick?: () => void }> = ({ onLinkClick }) => {
     const activeClass = "bg-orange-50 text-[#FF7A00]";
@@ -20,25 +20,13 @@ const NavLinks: React.FC<{ onLinkClick?: () => void }> = ({ onLinkClick }) => {
                 <TemplateManagerIcon className="w-6 h-6" />
                 <span>Templates</span>
             </NavLink>
-            <NavLink to="/featured" className={getLinkClass} onClick={onLinkClick}>
-                <StarIcon className="w-6 h-6" />
-                <span>Featured Manager</span>
-            </NavLink>
             <NavLink to="/submissions" className={getLinkClass} onClick={onLinkClick}>
                 <SubmissionsIcon className="w-6 h-6" />
                 <span>Submissions</span>
             </NavLink>
-             <NavLink to="/users" className={getLinkClass} onClick={onLinkClick}>
-                <UsersIcon className="w-6 h-6" />
-                <span>User Manager</span>
-            </NavLink>
             <NavLink to="/categories" className={getLinkClass} onClick={onLinkClick}>
                 <CategoryIcon className="w-6 h-6" />
                 <span>Categories</span>
-            </NavLink>
-            <NavLink to="/languages" className={getLinkClass} onClick={onLinkClick}>
-                <LanguageIcon className="w-6 h-6" />
-                <span>Languages</span>
             </NavLink>
              <NavLink to="/suggestions" className={getLinkClass} onClick={onLinkClick}>
                 <SuggestionIcon className="w-6 h-6" />
@@ -47,10 +35,6 @@ const NavLinks: React.FC<{ onLinkClick?: () => void }> = ({ onLinkClick }) => {
             <NavLink to="/notifications" className={getLinkClass} onClick={onLinkClick}>
                 <BellIcon className="w-6 h-6" />
                 <span>Notifications</span>
-            </NavLink>
-            <NavLink to="/settings" className={getLinkClass} onClick={onLinkClick}>
-                <SettingsIcon className="w-6 h-6" />
-                <span>App Settings</span>
             </NavLink>
         </>
     );

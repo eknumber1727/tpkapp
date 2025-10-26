@@ -8,9 +8,8 @@ import { ChevronLeftIcon } from '../../components/shared/Icons';
 const AdminEditTemplateScreen: React.FC = () => {
     const { templateId } = useParams<{ templateId: string }>();
     const navigate = useNavigate();
-    const { adminTemplates, getTemplateById, updateTemplate, categories, languages } = useData(); // Use adminTemplates
+    const { templates, updateTemplate, categories } = useData();
 
-    // Use a local state `template` that is only set once.
     const [template, setTemplate] = useState<Template | null | undefined>(undefined);
 
     const [title, setTitle] = useState('');
@@ -25,8 +24,7 @@ const AdminEditTemplateScreen: React.FC = () => {
 
     useEffect(() => {
         if (templateId) {
-            // Find from adminTemplates for immediate access
-            const foundTemplate = adminTemplates.find(t => t.id === templateId);
+            const foundTemplate = templates.find(t => t.id === templateId);
             if (foundTemplate) {
                 setTemplate(foundTemplate);
                 setTitle(foundTemplate.title);
@@ -35,12 +33,11 @@ const AdminEditTemplateScreen: React.FC = () => {
                 setTags(foundTemplate.tags.join(', '));
                 setRatios(foundTemplate.ratios_supported);
                 setIsActive(foundTemplate.is_active);
-            } else if (adminTemplates.length > 0) {
-                // If templates are loaded but not found, it's a 404
+            } else if (templates.length > 0) {
                 setTemplate(null);
             }
         }
-    }, [templateId, adminTemplates]);
+    }, [templateId, templates]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -94,18 +91,13 @@ const AdminEditTemplateScreen: React.FC = () => {
                 <form onSubmit={handleSubmit} className="space-y-6">
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label className="font-semibold text-[#2C3E50]">Unique Code</label>
-                            <input type="text" value={template.uniqueCode} readOnly className="w-full mt-1 p-2 border rounded-lg bg-gray-100 text-gray-500 font-mono" />
-                        </div>
                          <div>
                             <label className="font-semibold text-[#2C3E50]">Uploader</label>
                             <input type="text" value={`@${template.uploader_username}`} readOnly className="w-full mt-1 p-2 border rounded-lg bg-gray-100 text-gray-500" />
                         </div>
-                    </div>
-
-                    <div className="flex justify-center my-4">
-                         <img src={template.composite_preview_url} alt="Preview" className="w-40 h-50 object-contain rounded-lg bg-gray-100 p-1 border" />
+                        <div className="flex justify-center items-center">
+                             <img src={template.composite_preview_url} alt="Preview" className="w-24 h-30 object-contain rounded-lg bg-gray-100 p-1 border" />
+                        </div>
                     </div>
 
                     <hr />
@@ -122,9 +114,7 @@ const AdminEditTemplateScreen: React.FC = () => {
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Language</label>
-                        <select value={language} onChange={e => setLanguage(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white">
-                            {languages.map(lang => <option key={lang.id} value={lang.name}>{lang.name}</option>)}
-                        </select>
+                        <input type="text" value={language} onChange={e => setLanguage(e.target.value)} required className="w-full mt-1 p-2 border rounded-lg" />
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Tags (comma separated)</label>

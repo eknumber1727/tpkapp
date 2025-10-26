@@ -6,7 +6,7 @@ import { CategoryName, AspectRatio, Role } from '../../types';
 
 const UserCreateTemplateScreen: React.FC = () => {
     const navigate = useNavigate();
-    const { currentUser, submitTemplate, adminSubmitTemplate, categories, languages } = useData();
+    const { currentUser, submitTemplate, adminSubmitTemplate, categories } = useData();
 
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState<CategoryName>('');
@@ -23,16 +23,11 @@ const UserCreateTemplateScreen: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
-        // Set default category and language if available
         if (categories.length > 0 && !category) {
             setCategory(categories[0].name);
         }
-        if (languages.length > 0 && !language) {
-            setLanguage(languages[0].name);
-        }
-    }, [categories, languages, category, language]);
+    }, [categories, category]);
     
-    // Effect to clean up blob URLs to prevent memory leaks
     useEffect(() => {
         return () => {
             if (pngPreview) URL.revokeObjectURL(pngPreview);
@@ -58,7 +53,6 @@ const UserCreateTemplateScreen: React.FC = () => {
                     ctx.clearRect(0,0, canvas.width, canvas.height);
                     ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
                     ctx.drawImage(pngImage, 0, 0, canvas.width, canvas.height);
-                    // No need to revoke here, the main cleanup effect will handle it.
                 };
             };
         }
@@ -81,7 +75,7 @@ const UserCreateTemplateScreen: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!pngFile || !bgFile || ratios.length === 0 || !title.trim() || !tags.trim() || !category || !language) {
+        if (!pngFile || !bgFile || ratios.length === 0 || !title.trim() || !tags.trim() || !category || !language.trim()) {
             setError('Please fill all fields, upload both images, and select a category and language.');
             return;
         }
@@ -113,12 +107,10 @@ const UserCreateTemplateScreen: React.FC = () => {
                 if(currentUser?.role === Role.ADMIN) {
                     await adminSubmitTemplate(submissionData, { pngFile, bgFile, compositeFile: blob });
                     alert('Template published successfully!');
-                    // UX FIX: Navigate to the template list for admins
                     navigate('/templates'); 
                 } else {
                     await submitTemplate(submissionData, { pngFile, bgFile, compositeFile: blob });
                     alert('Template submitted for review. Thank you!');
-                    // UX FIX: Navigate home for users
                     navigate('/');
                 }
             } catch(err) {
@@ -181,10 +173,7 @@ const UserCreateTemplateScreen: React.FC = () => {
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Language</label>
-                        <select value={language} onChange={e => setLanguage(e.target.value)} required className="w-full mt-1 p-2 border rounded-lg bg-white">
-                            <option value="" disabled>Select a language</option>
-                            {languages.map(lang => <option key={lang.id} value={lang.name}>{lang.name}</option>)}
-                        </select>
+                         <input type="text" value={language} onChange={e => setLanguage(e.target.value)} required placeholder="e.g., Marathi" className="w-full mt-1 p-2 border rounded-lg" />
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Tags (comma separated)</label>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon, VolumeOffIcon, VolumeUpIcon } from '../../components/shared/Icons';
+import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon } from '../../components/shared/Icons';
 import { exportMedia } from '../../utils/helpers';
 import { AspectRatio, SavedDesignData } from '../../types';
 import { ASPECT_RATIOS } from '../../constants';
@@ -47,7 +47,7 @@ const DownloadCompleteModal: React.FC<{
 const EditorScreen: React.FC = () => {
   const { templateId, designId } = useParams<{ templateId: string, designId?: string }>();
   const navigate = useNavigate();
-  const { getTemplateById, getSavedDesignById, saveDesign, addDownload, appSettings } = useData();
+  const { getTemplateById, getSavedDesignById, saveDesign, addDownload } = useData();
 
   const template = templateId ? getTemplateById(templateId) : undefined;
   const existingDraft = designId ? getSavedDesignById(designId) : undefined;
@@ -128,7 +128,6 @@ const EditorScreen: React.FC = () => {
         }
       };
       
-      // Check if media is already loaded
       if ((media instanceof HTMLImageElement && media.complete) || (media instanceof HTMLVideoElement && media.readyState > 2)) {
         handler();
       } else {
@@ -142,11 +141,11 @@ const EditorScreen: React.FC = () => {
   useEffect(() => {
     if (bgMedia?.type === 'video' && mediaRef.current) {
         const videoElement = mediaRef.current as HTMLVideoElement;
-        videoElement.muted = bgMedia.muted ?? true; // Default to muted
+        videoElement.muted = true; // REVERT: Always muted for simplicity
         videoElement.setAttribute('playsinline', 'true');
         videoElement.play().catch(error => console.warn("Video autoplay was prevented by the browser.", error));
     }
-  }, [bgMedia?.src, bgMedia?.muted]);
+  }, [bgMedia?.src]);
 
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,21 +153,15 @@ const EditorScreen: React.FC = () => {
       const file = e.target.files[0];
       const url = URL.createObjectURL(file);
       const type = file.type.startsWith('video') ? 'video' : 'image';
-      setBgMedia({ src: url, type, x: 0, y: 0, scale: 1, muted: true });
+      setBgMedia({ src: url, type, x: 0, y: 0, scale: 1 });
     }
   };
   
   const resetTransform = () => autoFitMedia();
-
-  const toggleMute = () => {
-      if (bgMedia?.type === 'video') {
-          setBgMedia(prev => prev ? ({...prev, muted: !prev.muted}) : null);
-      }
-  }
   
   // --- Interaction Handlers ---
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.target !== e.currentTarget) return; // Ignore events from children (like mute button)
+    if (e.target !== e.currentTarget) return;
     interactionState.isDragging = true;
     interactionState.dragStart = { x: e.clientX, y: e.clientY };
     (e.target as HTMLElement).style.cursor = 'grabbing';
@@ -198,10 +191,7 @@ const EditorScreen: React.FC = () => {
   
     const handleTouchStart = (e: React.TouchEvent) => {
         const touches = e.touches;
-        // Only trigger interactions if the event starts on the container itself
         if (e.target !== e.currentTarget) return;
-
-        // Allow page scroll by default unless we start a pan/pinch
         if (touches.length === 2 && bgMedia) {
             e.preventDefault();
             interactionState.isPinching = true;
@@ -264,6 +254,7 @@ const EditorScreen: React.FC = () => {
     if (!bgMedia || !template || !canvasContainerRef.current || isProcessing) return;
     setIsProcessing(true);
     setGeneratedFile(null);
+    setProcessingStatus('Processing...');
 
     try {
         const designData: SavedDesignData = { bgMedia };
@@ -271,50 +262,30 @@ const EditorScreen: React.FC = () => {
             width: canvasContainerRef.current.offsetWidth,
             height: canvasContainerRef.current.offsetHeight
         };
-        // Use a higher resolution for export
         const exportWidth = 1080;
         const exportHeight = exportWidth / (displaySize.width / displaySize.height);
         const canvasSize = { width: exportWidth, height: exportHeight };
 
-        const { blob, fileType } = await exportMedia(designData, template.png_url, appSettings, canvasSize, displaySize, setProcessingStatus);
+        // REVERT: Removed appSettings from exportMedia call
+        const { blob, fileType } = await exportMedia(designData, template.png_url, canvasSize, displaySize, setProcessingStatus);
         
-        const extension = fileType === 'video' ? 'mp4' : 'jpg';
-        const mimeType = fileType === 'video' ? 'video/mp4' : 'image/jpeg';
-        const fileName = `timepass-katta-creation.${extension}`;
-        const file = new File([blob], fileName, { type: mimeType });
+        const fileName = `timepass-katta-creation.jpg`; // Always jpg now
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
 
         const onSuccessfulExport = () => {
-            // Generate a thumbnail for the downloads page
-            const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = 200;
-            thumbCanvas.height = 200;
-            const thumbCtx = thumbCanvas.getContext('2d');
-            if (thumbCtx) {
-                const tempUrl = URL.createObjectURL(blob);
-                if (fileType === 'image') {
-                    const img = new Image();
-                    img.onload = () => {
-                        thumbCtx.drawImage(img, 0, 0, 200, 200);
-                        addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.8) });
-                        URL.revokeObjectURL(tempUrl);
-                    };
-                    img.src = tempUrl;
-                } else {
-                    const video = document.createElement('video');
-                    video.onloadeddata = () => {
-                        video.currentTime = 0;
-                    };
-                    video.onseeked = () => {
-                         thumbCtx.drawImage(video, 0, 0, 200, 200);
-                         addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.8) });
-                         URL.revokeObjectURL(tempUrl);
-                    };
-                    video.src = tempUrl;
-                }
-            } else {
-                addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: undefined });
-            }
-             setIsDownloadComplete(true);
+            const thumbUrl = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+                const thumbCanvas = document.createElement('canvas');
+                thumbCanvas.width = 200;
+                thumbCanvas.height = 200;
+                const thumbCtx = thumbCanvas.getContext('2d');
+                thumbCtx?.drawImage(img, 0, 0, 200, 200);
+                addDownload({ template_id: template.id, design_id: existingDraft?.id || null, local_only: true, thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.8) });
+                URL.revokeObjectURL(thumbUrl);
+            };
+            img.src = thumbUrl;
+            setIsDownloadComplete(true);
         };
         
         const canShare = navigator.share && navigator.canShare({ files: [file] });
@@ -399,13 +370,6 @@ const EditorScreen: React.FC = () => {
                 )}
               </div>
               
-              {/* Mute Button for Video */}
-              {bgMedia.type === 'video' && (
-                <button onClick={toggleMute} className="absolute top-3 left-3 bg-black/40 text-white p-2 rounded-full backdrop-blur-sm z-20">
-                    {bgMedia.muted ? <VolumeOffIcon className="w-5 h-5" /> : <VolumeUpIcon className="w-5 h-5" />}
-                </button>
-              )}
-
               {/* Template Overlay */}
               <img src={template.png_url} alt="Template overlay" className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none z-10" />
             </>

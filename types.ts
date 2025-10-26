@@ -1,3 +1,19 @@
+// Fix: Add ImportMeta interface to support import.meta.env for Vite
+interface ImportMetaEnv {
+    readonly VITE_FIREBASE_API_KEY: string;
+    readonly VITE_FIREBASE_AUTH_DOMAIN: string;
+    readonly VITE_FIREBASE_PROJECT_ID: string;
+    readonly VITE_FIREBASE_STORAGE_BUCKET: string;
+    readonly VITE_FIREBASE_MESSAGING_SENDER_ID: string;
+    readonly VITE_FIREBASE_APP_ID: string;
+    readonly VITE_FIREBASE_MEASUREMENT_ID: string;
+    readonly VITE_FIREBASE_MESSAGING_VAPID_KEY: string;
+}
+
+interface ImportMeta {
+    readonly env: ImportMetaEnv;
+}
+
 // This informs TypeScript that a global `firebase` object exists.
 declare const firebase: any;
 
@@ -11,11 +27,6 @@ export type CategoryName = string;
 export interface Category {
   id: string;
   name: CategoryName;
-}
-
-export interface Language {
-  id: string;
-  name: string;
 }
 
 export enum SubmissionStatus {
@@ -57,7 +68,6 @@ export interface User {
 export interface Template {
   id: string;
   title: string;
-  uniqueCode: string;
   category: CategoryName;
   language: string;
   tags: string[];
@@ -101,7 +111,6 @@ export interface SavedDesignData {
         scale: number;
         x: number;
         y: number;
-        muted?: boolean;
     };
 }
 
@@ -138,11 +147,11 @@ export interface AppSettings {
   aboutUs: string;
   terms: string;
   contactEmail: string;
-  adsEnabled: boolean;
+  adsEnabled: boolean; // Reverted but kept for AdBanner to not crash
   adSensePublisherId: string;
   adSenseSlotId: string;
-  faviconUrl: string;
-  featuredTemplates: string[];
+  // Fix: Add missing properties to AppSettings type.
+  faviconUrl?: string;
   watermarkEnabled: boolean;
   watermarkText: string;
 }

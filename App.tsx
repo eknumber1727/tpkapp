@@ -27,10 +27,6 @@ import { Role } from './types';
 import AdminCategoryManagerScreen from './screens/admin/AdminCategoryManagerScreen';
 import AdminSuggestionsScreen from './screens/admin/AdminSuggestionsScreen';
 import AdminNotificationsManagerScreen from './screens/admin/AdminNotificationsManagerScreen';
-import AdminAppSettingsManagerScreen from './screens/admin/AdminAppSettingsManagerScreen';
-import AdminLanguageManagerScreen from './screens/admin/AdminLanguageManagerScreen';
-import AdminFeaturedManagerScreen from './screens/admin/AdminFeaturedManagerScreen';
-import AdminUserManagerScreen from './screens/admin/AdminUserManagerScreen';
 
 const UserRoutes = () => (
   <UserLayout>
@@ -60,12 +56,8 @@ const AdminRoutes = () => (
       <Route path="/templates" element={<AdminTemplateManagerScreen />} />
       <Route path="/submissions" element={<AdminSubmissionsManagerScreen />} />
       <Route path="/categories" element={<AdminCategoryManagerScreen />} />
-      <Route path="/languages" element={<AdminLanguageManagerScreen />} />
       <Route path="/suggestions" element={<AdminSuggestionsScreen />} />
       <Route path="/notifications" element={<AdminNotificationsManagerScreen />} />
-      <Route path="/settings" element={<AdminAppSettingsManagerScreen />} />
-      <Route path="/featured" element={<AdminFeaturedManagerScreen />} />
-      <Route path="/users" element={<AdminUserManagerScreen />} />
       <Route path="/create-template" element={<UserCreateTemplateScreen />} />
       <Route path="/templates/:templateId/edit" element={<AdminEditTemplateScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -91,33 +83,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  React.useEffect(() => {
-    // Dynamically load Google AdSense script if enabled
-    if (appSettings.adsEnabled && appSettings.adSensePublisherId) {
-      const scriptId = 'adsense-script';
-      if (document.getElementById(scriptId)) return;
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${appSettings.adSensePublisherId}`;
-      script.async = true;
-      script.crossOrigin = 'anonymous';
-      document.head.appendChild(script);
-    }
-  }, [appSettings.adsEnabled, appSettings.adSensePublisherId]);
-
-  React.useEffect(() => {
-    const faviconUrl = appSettings.faviconUrl;
-    if (faviconUrl) {
-      let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.head.appendChild(link);
-      }
-      link.href = faviconUrl;
-    }
-  }, [appSettings.faviconUrl]);
-  
   // Display a loading indicator or a message if Firebase config is missing
   if (!firebaseConfig.apiKey) {
     return (
