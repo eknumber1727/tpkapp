@@ -5,8 +5,7 @@ import { LogoutIcon } from '../../components/shared/Icons';
 import { SubmissionStatus, Template } from '../../types';
 
 const UserProfileScreen: React.FC = () => {
-  // FIX: Destructure `templates` from useData to make it available in the component.
-  const { currentUser, logout, templates, adminTemplates, updateUsername, submitSuggestion, installPromptEvent, triggerInstallPrompt, notificationPermission, subscribeToNotifications } = useData();
+  const { currentUser, logout, updateUsername, submitSuggestion, installPromptEvent, triggerInstallPrompt, notificationPermission, subscribeToNotifications, getTemplatesByCreatorId } = useData();
   const navigate = useNavigate();
 
   const [newUsername, setNewUsername] = useState(currentUser?.name || '');
@@ -15,10 +14,14 @@ const UserProfileScreen: React.FC = () => {
   const [suggestion, setSuggestion] = useState('');
   const [suggestionSuccess, setSuggestionSuccess] = useState('');
   const [notificationError, setNotificationError] = useState('');
+  const [myTemplates, setMyTemplates] = useState<Template[]>([]);
 
   useEffect(() => {
     setNewUsername(currentUser?.name || '');
-  }, [currentUser]);
+    if (currentUser) {
+        getTemplatesByCreatorId(currentUser.id).then(setMyTemplates);
+    }
+  }, [currentUser, getTemplatesByCreatorId]);
 
   const handleLogout = () => {
     logout();
@@ -68,22 +71,19 @@ const UserProfileScreen: React.FC = () => {
   
   const creatorInsights = useMemo(() => {
       if (!currentUser) return { submitted: 0, approved: 0, rejected: 0, totalDownloads: 0 };
-      // User templates are not paginated, so `templates` is fine.
-      // But for consistency and to ensure all data is there, we could use adminTemplates if the user is an admin.
-      const sourceTemplates = currentUser.role === 'admin' ? adminTemplates : templates;
-      const mySubmissions = sourceTemplates.filter(t => t.uploader_id === currentUser.id);
-      const approvedSubmissions = mySubmissions.filter(t => t.status === SubmissionStatus.APPROVED);
+      
+      const approvedSubmissions = myTemplates.filter(t => t.status === SubmissionStatus.APPROVED);
 
       // PERFORMANCE FIX: Sum the downloadCount property directly instead of filtering the entire downloads collection.
       const totalDownloads = approvedSubmissions.reduce((sum, t) => sum + (t.downloadCount || 0), 0);
       
       return {
-          submitted: mySubmissions.length,
+          submitted: myTemplates.length,
           approved: approvedSubmissions.length,
-          rejected: mySubmissions.filter(t => t.status === SubmissionStatus.REJECTED).length,
+          rejected: myTemplates.filter(t => t.status === SubmissionStatus.REJECTED).length,
           totalDownloads
       }
-  }, [currentUser, templates, adminTemplates]);
+  }, [currentUser, myTemplates]);
 
   if (!currentUser) {
     return null;
