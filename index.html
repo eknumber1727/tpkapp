@@ -7,29 +7,39 @@
     
     <!-- PWA & Mobile Optimization -->
     <link rel="manifest" href="/manifest.json">
-    <link rel="icon" href="/icons/icon-192x192.png" />
+    <!-- Default Favicon - this will be updated dynamically by App.tsx -->
+    <link id="favicon" rel="icon" href="/icons/icon-192x192.png" />
     <meta name="theme-color" content="#FF7A00">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-<script type="importmap">
+    <!-- Google AdSense -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+
+    <!-- Import Map for ES Modules -->
+    <script type="importmap">
 {
   "imports": {
-    "react": "https://aistudiocdn.com/react@^18.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^18.2.0/",
-    "react/": "https://aistudiocdn.com/react@^18.2.0/",
-    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^6.24.1",
-    "uuid": "https://aistudiocdn.com/uuid@^9.0.1",
-    "firebase/": "https://aistudiocdn.com/firebase@^10.12.3/",
-    "@google/genai": "https://aistudiocdn.com/google/genai@^0.11.4"
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.25.1",
+    "firebase/compat/app": "https://esm.sh/firebase@10.12.3/compat/app",
+    "firebase/compat/auth": "https://esm.sh/firebase@10.12.3/compat/auth",
+    "firebase/compat/firestore": "https://esm.sh/firebase@10.12.3/compat/firestore",
+    "firebase/compat/storage": "https://esm.sh/firebase@10.12.3/compat/storage",
+    "firebase/compat/messaging": "https://esm.sh/firebase@10.12.3/compat/messaging",
+    "uuid": "https://esm.sh/uuid@9.0.1",
+    "@google/genai": "https://esm.sh/@google/genai@0.11.4",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.4.0/"
   }
 }
 </script>
 </head>
-<body class="bg-[#F8F9FA]">
+<body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
 </body>

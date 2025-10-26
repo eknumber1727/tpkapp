@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { ChevronLeftIcon, ShareIcon, ResetIcon, CheckCircleIcon, DownloadIcon } from '../../components/shared/Icons';
 import { exportMedia } from '../../utils/helpers';
-import { AspectRatio, SavedDesignData } from '../../types';
+import { AspectRatio, SavedDesignData, AppSettings } from '../../types';
 import { ASPECT_RATIOS } from '../../constants';
 
 const DownloadCompleteModal: React.FC<{ 
@@ -47,7 +47,7 @@ const DownloadCompleteModal: React.FC<{
 const EditorScreen: React.FC = () => {
   const { templateId, designId } = useParams<{ templateId: string, designId?: string }>();
   const navigate = useNavigate();
-  const { getTemplateById, getSavedDesignById, saveDesign, addDownload } = useData();
+  const { getTemplateById, getSavedDesignById, saveDesign, addDownload, appSettings } = useData();
 
   const template = templateId ? getTemplateById(templateId) : undefined;
   const existingDraft = designId ? getSavedDesignById(designId) : undefined;
@@ -266,8 +266,7 @@ const EditorScreen: React.FC = () => {
         const exportHeight = exportWidth / (displaySize.width / displaySize.height);
         const canvasSize = { width: exportWidth, height: exportHeight };
 
-        // REVERT: Removed appSettings from exportMedia call
-        const { blob, fileType } = await exportMedia(designData, template.png_url, canvasSize, displaySize, setProcessingStatus);
+        const { blob, fileType } = await exportMedia(designData, template.png_url, canvasSize, displaySize, setProcessingStatus, appSettings);
         
         const fileName = `timepass-katta-creation.jpg`; // Always jpg now
         const file = new File([blob], fileName, { type: 'image/jpeg' });

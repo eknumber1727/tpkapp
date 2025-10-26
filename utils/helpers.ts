@@ -46,7 +46,8 @@ export const exportMedia = async (
     templateImageSrc: string,
     canvasSize: { width: number; height: number; },
     displaySize: { width: number; height: number; },
-    onProgress: (message: string) => void
+    onProgress: (message: string) => void,
+    appSettings: AppSettings
 ): Promise<{blob: Blob, fileType: 'image' | 'video'}> => {
 
     const { bgMedia } = designData;
@@ -77,6 +78,27 @@ export const exportMedia = async (
 
     drawTransformedMedia(ctx, mediaElement, exportBgTransform);
     ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
+    
+    // Add watermark if enabled
+    if (appSettings.watermarkEnabled && appSettings.watermarkText) {
+        onProgress('Adding watermark...');
+        const fontSize = Math.max(12, canvas.width * 0.02); // Ensure minimum size
+        ctx.font = `bold ${fontSize}px Arial`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        // Simple shadow for better visibility
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        ctx.fillText(appSettings.watermarkText, canvas.width - 15, canvas.height - 15);
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+    }
     
     const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Failed to create blob from canvas.')), 'image/jpeg', 0.9);

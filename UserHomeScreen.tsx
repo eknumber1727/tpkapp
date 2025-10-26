@@ -117,7 +117,7 @@ const UserHomeScreen: React.FC = () => {
             <option value="Most Liked">Most Liked</option>
           </select>
           {/* REVERT: Language filter removed for simplicity */}
-          <div className="bg-white px-3 py-3 rounded-full shadow-sm text-[#7F8C8D]">
+          <div className="px-3 py-3 text-sm text-center text-[#7F8C8D]">
             All Languages
           </div>
         </div>

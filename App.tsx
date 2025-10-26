@@ -69,6 +69,13 @@ const App: React.FC = () => {
   const { currentUser, appSettings, loading } = useData();
 
   React.useEffect(() => {
+    const favicon = document.getElementById('favicon') as HTMLLinkElement | null;
+    if (favicon && appSettings.faviconUrl) {
+      favicon.href = appSettings.faviconUrl;
+    }
+  }, [appSettings.faviconUrl]);
+
+  React.useEffect(() => {
     // Register the Firebase messaging service worker securely
     if ('serviceWorker' in navigator && firebaseConfig.apiKey) {
       const firebaseConfigParams = encodeURIComponent(JSON.stringify(firebaseConfig));
