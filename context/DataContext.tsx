@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Role, SubmissionStatus } from '../types';
 import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, Language, SavedDesignData } from '../types';
-// FIX: Import firebase default for compat types, and named exports for service instances.
+// FIX: import firebase to use its namespace for FieldValue, etc.
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -74,7 +74,6 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
-    // FIX: Use compat storage API
     const storageRef = storage.ref(path);
     await storageRef.put(file);
     return await storageRef.getDownloadURL();
@@ -113,7 +112,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   // State for pagination
-  const [lastTemplateVisible, setLastTemplateVisible] = useState<firebase.firestore.QueryDocumentSnapshot | null>(null);
+  const [lastTemplateVisible, setLastTemplateVisible] = useState<any | null>(null); // firebase.firestore.QueryDocumentSnapshot
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [hasMoreTemplates, setHasMoreTemplates] = useState(true);
 
@@ -148,7 +147,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const toISOStringSafe = (timestamp: any): string => {
-      if (timestamp instanceof firebase.firestore.Timestamp) {
+      if (timestamp && typeof timestamp.toDate === 'function') { // Check for Firestore Timestamp
           return timestamp.toDate().toISOString();
       }
       if (timestamp === null || timestamp === undefined) {
@@ -157,7 +156,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return timestamp;
   }
   const toISOStringSafeOrNull = (timestamp: any): string | null => {
-      if (timestamp instanceof firebase.firestore.Timestamp) {
+      if (timestamp && typeof timestamp.toDate === 'function') { // Check for Firestore Timestamp
           return timestamp.toDate().toISOString();
       }
       return null;
@@ -193,6 +192,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setSavedDesigns([]);
             setDownloads([]);
             setLikes([]);
+            setBookmarkedTemplates([]);
         }
         setLoading(false);
     });
@@ -304,7 +304,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const bookmarkedIds = bookmarks.map(b => b.template_id);
     // Firestore 'in' queries are limited to 10 items. We must batch them.
-    const fetchPromises: Promise<firebase.firestore.QuerySnapshot>[] = [];
+    const fetchPromises: Promise<any>[] = []; // Promise<firebase.firestore.QuerySnapshot>[]
     for (let i = 0; i < bookmarkedIds.length; i += 10) {
         const chunk = bookmarkedIds.slice(i, i + 10);
         if (chunk.length > 0) {
@@ -315,7 +315,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     Promise.all(fetchPromises).then(snapshots => {
         const fetchedTemplates: Template[] = [];
         snapshots.forEach(snapshot => {
-            snapshot.forEach(doc => {
+            snapshot.forEach((doc: any) => {
                 fetchedTemplates.push({
                     id: doc.id, ...doc.data(), created_at: toISOStringSafe(doc.data().created_at)
                 } as Template);
@@ -427,23 +427,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       fcmTokens: [],
     };
     await db.collection("users").doc(user.uid).set(newUser);
-    // No need to set current user here, onAuthStateChanged will handle it
   };
   
   const login = async (email: string, pass: string): Promise<void> => {
     await auth.signInWithEmailAndPassword(email, pass);
-     // No need to set current user here, onAuthStateChanged will handle it
   }
 
   const logout = async () => {
     await auth.signOut();
-    // State clearing is handled by the onAuthStateChanged listener
   };
 
   const getTemplateById = (templateId: string) => {
-    // Admin will have all templates, user will have paginated ones
     const sourceArray = currentUser?.role === Role.ADMIN ? adminTemplates : templates;
-    // Also check bookmarked templates for users, as it might not be in the paginated list
     const found = sourceArray.find(t => t.id === templateId) || bookmarkedTemplates.find(t => t.id === templateId);
     return found;
   }
@@ -506,13 +501,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const saveDesign = async (designData: Omit<SavedDesign, 'id' | 'user_id' | 'updated_at'> & { id?: string }) => {
     if (!currentUser) return;
     
-    // Ensure muted is explicitly handled
     const bgMedia = designData.layers_json.bgMedia;
     if (bgMedia.type === 'video' && bgMedia.muted === undefined) {
-        bgMedia.muted = true; // Default to muted if not specified
+        bgMedia.muted = true;
     }
 
-    // Convert complex object to JSON string for Firestore
     const layersJsonString = JSON.stringify(designData.layers_json);
 
     if (designData.id) {
@@ -556,7 +549,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const counterRef = db.collection('counters').doc('templates');
     let newCode = 'TK0001';
 
-    await db.runTransaction(async (transaction) => {
+    await db.runTransaction(async (transaction: any) => {
         const counterDoc = await transaction.get(counterRef);
         const currentCount = counterDoc.exists ? (counterDoc.data()?.count || 0) : 0;
         const newCount = currentCount + 1;
@@ -632,7 +625,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setNotificationPermission(permission);
 
         if (permission === 'granted') {
-            const token = await messaging.getToken({ vapidKey: 'BJEZnp2j8mN-73y-aO3sC0s_Y-aI8C4A7gZ_p_Q5F9X8fG4oY3wZJ9tZzCjJ3X1e9wZ6hH8xQ3C5yI' });
+            const vapidKey = (import.meta as any).env.VITE_FIREBASE_MESSAGING_VAPID_KEY;
+            if (!vapidKey) {
+                throw new Error("VAPID key for notifications is not configured.");
+            }
+            const token = await messaging.getToken({ vapidKey });
             if (token) {
                 console.log('FCM Token:', token);
                 const userDocRef = db.collection('users').doc(currentUser.id);

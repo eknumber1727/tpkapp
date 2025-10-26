@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useData } from './context/DataContext';
+import { firebaseConfig } from './firebase'; // Import the config
 
 import LoginScreen from './screens/LoginScreen';
 import UserHomeScreen from './screens/user/UserHomeScreen';
@@ -73,15 +74,28 @@ const AdminRoutes = () => (
 );
 
 const App: React.FC = () => {
-  const { currentUser, appSettings } = useData();
+  const { currentUser, appSettings, loading } = useData();
 
-  useEffect(() => {
+  React.useEffect(() => {
+    // Register the Firebase messaging service worker securely
+    if ('serviceWorker' in navigator && firebaseConfig.apiKey) {
+      const firebaseConfigParams = encodeURIComponent(JSON.stringify(firebaseConfig));
+      navigator.serviceWorker
+        .register(`/firebase-messaging-sw.js?firebaseConfig=${firebaseConfigParams}`)
+        .then((registration) => {
+          console.log('Service Worker registration successful, scope is:', registration.scope);
+        })
+        .catch((err) => {
+          console.log('Service Worker registration failed:', err);
+        });
+    }
+  }, []);
+
+  React.useEffect(() => {
     // Dynamically load Google AdSense script if enabled
     if (appSettings.adsEnabled && appSettings.adSensePublisherId) {
       const scriptId = 'adsense-script';
-      if (document.getElementById(scriptId)) {
-        return; // Script already added
-      }
+      if (document.getElementById(scriptId)) return;
       const script = document.createElement('script');
       script.id = scriptId;
       script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${appSettings.adSensePublisherId}`;
@@ -91,7 +105,7 @@ const App: React.FC = () => {
     }
   }, [appSettings.adsEnabled, appSettings.adSensePublisherId]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const faviconUrl = appSettings.faviconUrl;
     if (faviconUrl) {
       let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
@@ -103,6 +117,25 @@ const App: React.FC = () => {
       link.href = faviconUrl;
     }
   }, [appSettings.faviconUrl]);
+  
+  // Display a loading indicator or a message if Firebase config is missing
+  if (!firebaseConfig.apiKey) {
+    return (
+        <div style={{ padding: '20px', textAlign: 'center' }}>
+            <h1>Configuration Error</h1>
+            <p>Firebase configuration is missing. Please set up your environment variables.</p>
+        </div>
+    );
+  }
+
+  // Show a global loading spinner while Firebase auth is initializing
+  if (loading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center">
+              <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-[#FF7A00]"></div>
+          </div>
+      );
+  }
 
   const renderRoutes = () => {
     if (!currentUser) {

@@ -1,6 +1,5 @@
-// FIX: Use Firebase compat Timestamp type to align with the rest of the project.
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/firestore';
+// This informs TypeScript that a global `firebase` object exists.
+declare const firebase: any;
 
 export enum Role {
   USER = 'user',
@@ -36,8 +35,8 @@ export interface UserFromFirestore {
   role: Role;
   password?: string;
   creator_id: string;
-  created_at: firebase.firestore.Timestamp;
-  lastUsernameChangeAt: firebase.firestore.Timestamp | null;
+  created_at: any; // firebase.firestore.Timestamp;
+  lastUsernameChangeAt: any | null; // firebase.firestore.Timestamp | null;
   fcmTokens?: string[];
 }
 
