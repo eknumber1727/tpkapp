@@ -7,7 +7,6 @@ import 'firebase/compat/messaging';
 
 // SECURITY FIX: Your web app's Firebase configuration is now loaded from environment variables
 export const firebaseConfig = {
-  // FIX: Use import.meta.env to access environment variables in Vite. This is resolved by adding type definitions in types.ts.
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,

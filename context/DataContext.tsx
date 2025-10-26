@@ -3,6 +3,7 @@ import { Role, SubmissionStatus } from '../types';
 import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, SavedDesignData } from '../types';
 import firebase, { auth, db, storage, messaging } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
+import { GoogleGenAI } from '@google/genai';
 
 interface DataContextType {
   // State
@@ -44,6 +45,7 @@ interface DataContextType {
   updateUsername: (newUsername: string) => Promise<void>;
   submitSuggestion: (text: string) => Promise<void>;
   subscribeToNotifications: () => Promise<void>;
+  generateTags: (title: string, imageFile: File) => Promise<string>;
 
   // Admin Actions
   adminSubmitTemplate: (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at' | 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => Promise<void>;
@@ -511,7 +513,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setNotificationPermission(permission);
 
         if (permission === 'granted') {
-            // Fix: Property 'env' does not exist on type 'ImportMeta'. This is resolved by adding type definitions in types.ts.
             const vapidKey = import.meta.env.VITE_FIREBASE_MESSAGING_VAPID_KEY;
             if (!vapidKey) {
                 throw new Error("VAPID key for notifications is not configured.");
@@ -538,6 +539,43 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
   
+  const generateTags = async (title: string, imageFile: File): Promise<string> => {
+    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+        throw new Error("VITE_GEMINI_API_KEY environment variable is not set for AI features.");
+    }
+    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+
+    const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+        }
+        reader.onerror = error => reject(error);
+    });
+
+    const imageBase64 = await toBase64(imageFile);
+
+    const imagePart = {
+        inlineData: {
+            data: imageBase64,
+            mimeType: imageFile.type,
+        },
+    };
+
+    const textPart = {
+        text: `Analyze the title and the image for this template. The image is a transparent PNG overlay that will be placed on top of user photos. The title is "${title}". Suggest 5-7 relevant, comma-separated, lowercase, single-word tags for searching. For example: "birthday, celebration, party, frame, fun". Only return the comma-separated tags, nothing else.`,
+    };
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [imagePart, textPart] },
+    });
+
+    return response.text.trim();
+  };
+
   // Admin functions
   const adminSubmitTemplate = async (submissionData: Omit<Template, 'id'|'uploader_id'|'uploader_username'|'status'|'is_active'|'created_at'| 'png_url' | 'bg_preview_url' | 'composite_preview_url' | 'likeCount' | 'downloadCount'>, files: {pngFile: File, bgFile: File, compositeFile: Blob}) => {
       if(!currentUser || currentUser.role !== Role.ADMIN) return;
@@ -645,6 +683,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     login, signup, logout,
     getTemplatesByCreatorId,
     getTemplateById, getIsBookmarked, toggleBookmark, getIsLiked, toggleLike, getSavedDesignById, saveDesign, addDownload, submitTemplate, updateUsername, submitSuggestion, subscribeToNotifications,
+    generateTags,
     adminSubmitTemplate, updateTemplate, deleteTemplate, approveTemplate, rejectTemplate, addCategory, deleteCategory,
     sendNotification,
     updateAppSettings,

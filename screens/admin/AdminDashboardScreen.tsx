@@ -41,7 +41,6 @@ const AdminDashboardScreen: React.FC = () => {
             <div className="flex flex-wrap gap-4">
                 <button onClick={() => navigate('/templates')} className="px-6 py-3 bg-gradient-to-r from-[#FFB800] to-[#FF7A00] text-[#3D2811] font-semibold rounded-lg">Manage Templates</button>
                 <button onClick={() => navigate('/submissions')} className="px-6 py-3 bg-white text-[#2C3E50] font-semibold rounded-lg shadow-md">Review Submissions</button>
-                <button onClick={() => navigate('/users')} className="px-6 py-3 bg-white text-[#2C3E50] font-semibold rounded-lg shadow-md">Manage Users</button>
             </div>
         </div>
         <div className="bg-white p-6 rounded-[20px] shadow-sm">

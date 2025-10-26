@@ -3,10 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { ASPECT_RATIOS } from '../../constants';
 import { CategoryName, AspectRatio, Role } from '../../types';
+import { SparklesIcon } from '../../components/shared/Icons';
 
 const UserCreateTemplateScreen: React.FC = () => {
     const navigate = useNavigate();
-    const { currentUser, submitTemplate, adminSubmitTemplate, categories } = useData();
+    const { currentUser, submitTemplate, adminSubmitTemplate, categories, generateTags } = useData();
 
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState<CategoryName>('');
@@ -19,6 +20,7 @@ const UserCreateTemplateScreen: React.FC = () => {
     const [bgPreview, setBgPreview] = useState<string | null>(null);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [isSuggesting, setIsSuggesting] = useState(false);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -72,6 +74,24 @@ const UserCreateTemplateScreen: React.FC = () => {
             setPreview(URL.createObjectURL(file));
         }
     }
+
+    const handleSuggestTags = async () => {
+        if (!title.trim() || !pngFile) {
+            setError('Please provide a title and upload a PNG file first to suggest tags.');
+            return;
+        }
+        setError('');
+        setIsSuggesting(true);
+        try {
+            const suggestedTags = await generateTags(title, pngFile);
+            setTags(suggestedTags);
+        } catch (err: any) {
+            console.error("Tag generation failed:", err);
+            setError(err.message || 'Could not suggest tags. Please try again.');
+        } finally {
+            setIsSuggesting(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -177,7 +197,19 @@ const UserCreateTemplateScreen: React.FC = () => {
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Tags (comma separated)</label>
-                        <input type="text" value={tags} onChange={e => setTags(e.target.value)} required className="w-full mt-1 p-2 border rounded-lg" />
+                        <div className="flex gap-2 items-center mt-1">
+                            <input type="text" value={tags} onChange={e => setTags(e.target.value)} required className="flex-grow w-full p-2 border rounded-lg" />
+                            <button
+                                type="button"
+                                onClick={handleSuggestTags}
+                                disabled={isSuggesting || !title.trim() || !pngFile}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-sm font-semibold text-[#2C3E50] rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label="Suggest tags with AI"
+                            >
+                                <SparklesIcon className="w-4 h-4 text-[#FF7A00]" />
+                                {isSuggesting ? 'Suggesting...' : 'Suggest'}
+                            </button>
+                        </div>
                     </div>
                     <div>
                         <label className="font-semibold text-[#2C3E50]">Supported Ratios</label>
