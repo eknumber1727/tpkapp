@@ -18,6 +18,13 @@ export const firebaseConfig = {
 
 // Initialize Firebase (only if not already initialized)
 if (!firebase.apps.length) {
+  // CRITICAL FIX: Ensure API key exists before initializing.
+  // If it's missing, throw a descriptive error to prevent a generic crash.
+  if (!firebaseConfig.apiKey) {
+    throw new Error(
+      "Firebase API Key is missing. Please add VITE_FIREBASE_API_KEY to your environment variables. The app cannot start without it."
+    );
+  }
   firebase.initializeApp(firebaseConfig);
 }
 

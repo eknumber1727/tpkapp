@@ -83,16 +83,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Display a loading indicator or a message if Firebase config is missing
-  if (!firebaseConfig.apiKey) {
-    return (
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-            <h1>Configuration Error</h1>
-            <p>Firebase configuration is missing. Please set up your environment variables.</p>
-        </div>
-    );
-  }
-
   // Show a global loading spinner while Firebase auth is initializing
   if (loading) {
       return (
