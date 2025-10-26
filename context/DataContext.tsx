@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Role, SubmissionStatus } from '../types';
 import type { User, Template, Bookmark, SavedDesign, Download, Category, CategoryName, Suggestion, AppSettings, UserFromFirestore, Notification, Like, SavedDesignData } from '../types';
-import firebase, { auth, db, storage, messaging } from '../firebase';
+import firebase, { initializeFirebaseApp } from '../firebase';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenAI } from '@google/genai';
 
@@ -67,7 +67,7 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 const uploadFile = async (file: File | Blob, path: string): Promise<string> => {
-    const storageRef = storage.ref(path);
+    const storageRef = firebase.storage().ref(path);
     await storageRef.put(file);
     return await storageRef.getDownloadURL();
 };
@@ -85,7 +85,24 @@ const defaultAppSettings: AppSettings = {
     watermarkText: '',
 };
 
+// FIX: Use a module-level flag to ensure Firebase is initialized only once.
+let firebaseAppInitialized = false;
+
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // FIX: Initialize Firebase within the component's render cycle.
+  // This ensures any potential initialization errors (e.g., invalid API key)
+  // are caught by the parent ErrorBoundary component.
+  if (!firebaseAppInitialized) {
+    initializeFirebaseApp();
+    firebaseAppInitialized = true;
+  }
+  
+  // FIX: Get Firebase services after initialization.
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const storage = firebase.storage();
+  const messaging = firebase.messaging.isSupported() ? firebase.messaging() : null;
+
   const [users, setUsers] = useState<User[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);

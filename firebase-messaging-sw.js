@@ -76,21 +76,29 @@ const params = new URL(location).searchParams;
 const firebaseConfig = JSON.parse(params.get('firebaseConfig'));
 
 if (firebaseConfig) {
-    firebase.initializeApp(firebaseConfig);
-    const messaging = firebase.messaging();
+    try {
+        // Prevent re-initialization which can cause errors.
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        
+        const messaging = firebase.messaging();
 
-    messaging.onBackgroundMessage((payload) => {
-      console.log('[firebase-messaging-sw.js] Received background message ', payload);
-      
-      const notificationTitle = payload.notification?.title || 'New Message';
-      const notificationOptions = {
-        body: payload.notification?.body || 'You have a new notification.',
-        icon: '/icons/icon-192x192.png'
-      };
+        messaging.onBackgroundMessage((payload) => {
+          console.log('[firebase-messaging-sw.js] Received background message ', payload);
+          
+          const notificationTitle = payload.notification?.title || 'New Message';
+          const notificationOptions = {
+            body: payload.notification?.body || 'You have a new notification.',
+            icon: '/icons/icon-192x192.png'
+          };
 
-      self.registration.showNotification(notificationTitle, notificationOptions);
-    });
-    console.log('Firebase messaging service worker initialized.');
+          self.registration.showNotification(notificationTitle, notificationOptions);
+        });
+        console.log('Firebase messaging service worker initialized.');
+    } catch (e) {
+        console.error('Error initializing Firebase in service worker:', e);
+    }
 } else {
     console.error('Firebase config not found in service worker.');
 }

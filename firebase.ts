@@ -16,21 +16,17 @@ export const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase (only if not already initialized)
-if (!firebase.apps.length) {
-  // CRITICAL FIX: Ensure API key exists before initializing.
-  // If it's missing, throw a descriptive error to prevent a generic crash.
-  if (!firebaseConfig.apiKey) {
-    throw new Error(
-      "Firebase API Key is missing. Please add VITE_FIREBASE_API_KEY to your environment variables. The app cannot start without it."
-    );
-  }
-  firebase.initializeApp(firebaseConfig);
-}
-
-export const auth = firebase.auth();
-export const db = firebase.firestore();
-export const storage = firebase.storage();
-export const messaging = firebase.messaging.isSupported() ? firebase.messaging() : null;
+// FIX: Defer initialization to be called within the React component lifecycle.
+// This allows the ErrorBoundary to catch any configuration errors.
+export const initializeFirebaseApp = () => {
+    if (!firebase.apps.length) {
+      if (!firebaseConfig.apiKey) {
+        throw new Error(
+          "Firebase API Key is missing. Please add VITE_FIREBASE_API_KEY to your environment variables. The app cannot start without it."
+        );
+      }
+      firebase.initializeApp(firebaseConfig);
+    }
+};
 
 export default firebase;
